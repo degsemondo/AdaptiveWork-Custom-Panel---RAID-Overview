@@ -1,405 +1,450 @@
 # CSS Field - v1.1 Working Version
 
 ```css
-/* Professional Planview-style Custom Panel - Compact Design */
+/* ============================================================
+   AdaptiveWork Custom Panel — Professional Planview Design
+   ULTRA-COMPACT VERSION
+   ============================================================ */
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #f5f5f5;
-  color: #333;
+/* ----- Panel shell ----- */
+.aw-panel {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
   font-size: 12px;
-  line-height: 1.4;
-}
-
-.panel-container {
-  background: white;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  overflow: hidden;
-}
-
-.panel-header {
-  background: linear-gradient(135deg, #8B3A62 0%, #6f2f52 100%);
-  color: white;
-  padding: 8px 12px;
-  border-bottom: 2px solid #6f2f52;
-}
-
-.panel-header h1 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.tabs {
-  display: flex;
-  border-bottom: 1px solid #e0e0e0;
-  background: #fafafa;
+  color: #2c3e50;
   padding: 0;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.tab {
+/* ----- Header & tab bar ----- */
+.aw-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8eaed;
+  background: #fafbfc;
+  border-radius: 4px 4px 0 0;
+}
+
+.aw-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1a1a1a;
+}
+
+.aw-header-title i {
+  color: #8B3A62;
+}
+
+.aw-tabs {
+  display: flex;
+  gap: 0px;
+  border-bottom: 2px solid #e8eaed;
+  margin: 0 -12px -1px -12px;
+  padding: 0 12px;
+}
+
+.aw-tab {
   padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   border: none;
   background: transparent;
-  color: #666;
-  font-size: 12px;
-  font-weight: 500;
+  color: #5f6368;
   border-bottom: 2px solid transparent;
   transition: all 0.2s ease;
-  position: relative;
-  top: 1px;
-  margin-bottom: -1px;
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: -2px;
 }
 
-.tab:hover {
-  color: #8B3A62;
-  background: #f0f0f0;
+.aw-tab:hover {
+  color: #202124;
+  background: rgba(0, 0, 0, 0.02);
 }
 
-.tab.active {
+.aw-tab.active {
   color: #8B3A62;
   border-bottom-color: #8B3A62;
-  background: white;
+  background: transparent;
 }
 
-.tab-badge {
-  display: inline-block;
-  background: #e8e8e8;
-  color: #666;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 11px;
+/* ----- Tab count badges ----- */
+.aw-badge {
+  font-size: 10px;
   font-weight: 600;
-  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
   text-align: center;
 }
 
-.tab.active .tab-badge {
-  background: #8B3A62;
-  color: white;
-}
+.badge-risk    { background: #f3e5e8; color: #8B3A62; }
+.badge-issue   { background: #fce4ec; color: #c2185b; }
+.badge-request { background: #e3f2fd; color: #1565c0; }
 
-.tab-content {
-  display: none;
-  padding: 6px;
-}
+/* ----- Tab panes ----- */
+.aw-body { padding: 0; }
 
-.tab-content.active {
-  display: block;
-}
+.aw-tab-pane         { display: none; }
+.aw-tab-pane.active  { display: block; }
 
-.toolbar {
+/* ----- Toolbar (search + filter + add button) ----- */
+.aw-toolbar {
   display: flex;
-  gap: 6px;
-  margin-bottom: 6px;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #e8eaed;
+  background: #fafbfc;
 }
 
-.search-input {
+.aw-toolbar input {
   flex: 1;
-  min-width: 150px;
-  padding: 5px 8px;
-  border: 1px solid #ddd;
-  border-radius: 3px;
+  max-width: 240px;
   font-size: 12px;
-  transition: border-color 0.2s ease;
+  padding: 5px 8px;
+  border-radius: 3px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #202124;
+  transition: all 0.2s ease;
 }
 
-.search-input:focus {
+.aw-toolbar input:focus {
   outline: none;
   border-color: #8B3A62;
-  box-shadow: 0 0 0 2px rgba(139, 58, 98, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 58, 98, 0.1);
 }
 
-.filter-select {
-  padding: 5px 8px;
-  border: 1px solid #ddd;
-  border-radius: 3px;
+.aw-toolbar select {
   font-size: 12px;
-  background: white;
+  padding: 5px 8px;
+  border-radius: 3px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #202124;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.filter-select:focus {
+.aw-toolbar select:hover {
+  border-color: #bdc1c6;
+}
+
+.aw-toolbar select:focus {
   outline: none;
   border-color: #8B3A62;
-  box-shadow: 0 0 0 2px rgba(139, 58, 98, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 58, 98, 0.1);
 }
 
-.btn {
-  padding: 5px 10px;
-  background: #8B3A62;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
+/* ----- Buttons ----- */
+.aw-btn {
   font-size: 12px;
   font-weight: 500;
-  transition: background-color 0.2s ease;
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #202124;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
   white-space: nowrap;
 }
 
-.btn:hover {
-  background: #6f2f52;
+.aw-btn:hover {
+  background: #f8f9fa;
+  border-color: #bdc1c6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-.table-wrapper {
+.aw-btn-primary {
+  background: #8B3A62;
+  color: #fff;
+  border-color: #8B3A62;
+}
+
+.aw-btn-primary:hover {
+  background: #6d2d4c;
+  border-color: #6d2d4c;
+  box-shadow: 0 2px 4px rgba(139, 58, 98, 0.2);
+}
+
+/* ----- Data table ----- */
+.aw-table-wrap {
   overflow-x: auto;
+  padding: 8px 12px;
 }
 
-table {
+table.aw-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  line-height: 1.1;
 }
 
-th {
-  background: #f5f5f5;
-  padding: 4px 6px;
+table.aw-table th {
   text-align: left;
+  padding: 4px 8px;
   font-weight: 600;
-  color: #333;
-  border-bottom: 1px solid #ddd;
-  border-top: 1px solid #ddd;
+  font-size: 11px;
+  color: #5f6368;
+  border-bottom: 2px solid #e8eaed;
+  background: #fafbfc;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
   height: 24px;
 }
 
-td {
-  padding: 4px 6px;
-  border-bottom: 1px solid #eee;
+table.aw-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f0f0;
   vertical-align: middle;
+  color: #202124;
+  height: 24px;
 }
 
-tbody tr {
-  transition: background-color 0.15s ease;
+table.aw-table tr:last-child td { border-bottom: 1px solid #e8eaed; }
+
+table.aw-table tbody tr:hover {
+  background: #f8f9fa;
 }
 
-tbody tr:hover {
-  background: #f9f9f9;
+/* ----- Status / severity pills ----- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
+.pill-critical { background: #fce4ec; color: #c2185b; }
+.pill-high     { background: #fff3e0; color: #e65100; }
+.pill-medium   { background: #fce4ec; color: #ad1457; }
+.pill-low      { background: #e8f5e9; color: #2e7d32; }
+.pill-open     { background: #fce4ec; color: #c2185b; }
+.pill-inprog   { background: #e3f2fd; color: #1565c0; }
+.pill-resolved { background: #e8f5e9; color: #2e7d32; }
+.pill-pending  { background: #fff3e0; color: #e65100; }
+.pill-new      { background: #f3e5f5; color: #6a1b9a; }
+.pill-approved { background: #e8f5e9; color: #2e7d32; }
+.pill-rejected { background: #fce4ec; color: #c2185b; }
+
+/* ----- Row expand chevron ----- */
 .expand-btn {
   background: none;
   border: none;
   cursor: pointer;
   color: #8B3A62;
-  padding: 2px 4px;
-  font-size: 12px;
-  transition: transform 0.2s ease;
+  font-size: 16px;
+  padding: 4px 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  transition: all 0.2s ease;
+  width: 28px;
   height: 24px;
+  font-weight: 600;
+  position: relative;
 }
 
 .expand-btn::before {
-  content: "▶";
-}
-
-.expand-btn.expanded::before {
-  content: "▼";
-}
-
-.risk-name {
-  font-weight: 500;
-  color: #333;
-}
-
-.badge {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.badge-new {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.badge-closed {
-  background: #e8f5e9;
-  color: #388e3c;
-}
-
-.badge-realised {
-  background: #fff3e0;
-  color: #f57c00;
-}
-
-.editable-cell {
-  cursor: text;
-  position: relative;
-  padding: 2px 4px;
-}
-
-.editable-cell:hover {
-  background: #f0f0f0;
-}
-
-.edit-input,
-.edit-select {
-  width: 100%;
-  padding: 3px 4px;
-  border: 1px solid #8B3A62;
-  border-radius: 2px;
+  content: '▶';
   font-size: 12px;
-  font-family: inherit;
+  display: block;
 }
 
-.edit-input:focus,
-.edit-select:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(139, 58, 98, 0.2);
+.expand-btn:hover {
+  color: #6d2d4c;
+  background: rgba(139, 58, 98, 0.08);
+  border-radius: 3px;
 }
 
-.edit-controls {
+.expand-btn.open {
+  transform: rotate(90deg);
+}
+
+.expand-btn.open::before {
+  content: '▶';
+}
+
+/* ----- Actions sub-row ----- */
+.actions-row       { display: none; }
+.actions-row.show  { display: table-row; }
+
+.actions-block {
+  padding: 6px 10px;
+  background: #fafbfc;
+}
+
+.actions-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #5f6368;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.action-item {
   display: flex;
-  gap: 3px;
-  margin-top: 2px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  background: #fff;
+  border: 1px solid #e8eaed;
+  margin-bottom: 3px;
+  font-size: 12px;
 }
 
-.edit-controls button {
-  padding: 3px 6px;
-  font-size: 11px;
-  border: none;
-  border-radius: 2px;
+.action-item:last-child { margin-bottom: 0; }
+
+.action-name { font-size: 12px; font-weight: 500; color: #202124; flex: 1; }
+.action-meta { font-size: 11px; color: #5f6368; }
+
+.action-due          { font-size: 11px; color: #5f6368; }
+.action-due.overdue  { color: #d32f2f; font-weight: 500; }
+.action-due.ok       { color: #388e3c; font-weight: 500; }
+
+/* ----- Empty state ----- */
+.no-data {
+  padding: 24px 20px;
+  text-align: center;
+  color: #80868b;
+  font-size: 12px;
+}
+
+/* ----- Editable cells ----- */
+.editable {
   cursor: pointer;
+  position: relative;
+  border-radius: 2px;
   transition: all 0.2s ease;
 }
 
-.save-btn {
-  background: #4caf50;
-  color: white;
+.editable:hover:not(.editing) {
+  background: rgba(139, 58, 98, 0.06);
 }
 
-.save-btn:hover {
-  background: #45a049;
-}
-
-.cancel-btn {
-  background: #f44336;
-  color: white;
-}
-
-.cancel-btn:hover {
-  background: #da190b;
-}
-
-/* Heat map styles for Risk Rating */
-.heat-very-low {
-  background: #4caf50;
-  color: white;
-  padding: 2px 6px;
+.editable.editing {
+  padding: 2px 4px;
+  background: #fafbfc;
   border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
 }
 
-.heat-low {
-  background: #8bc34a;
-  color: white;
-  padding: 2px 6px;
+.edit-input {
+  font-size: 12px;
+  padding: 3px 5px;
+  border: 1px solid #8B3A62;
   border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
+  margin-right: 4px;
+  min-width: 80px;
+  font-family: inherit;
+  color: #202124;
 }
 
-.heat-medium {
-  background: #ff9800;
+.edit-input:focus {
+  outline: none;
+  border-color: #8B3A62;
+  box-shadow: 0 0 0 2px rgba(139, 58, 98, 0.1);
+}
+
+.edit-save, .edit-cancel {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: none;
+  cursor: pointer;
+  margin-right: 3px;
+  transition: all 0.2s ease;
+}
+
+.edit-save {
+  background: #8B3A62;
   color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
 }
 
-.heat-high {
-  background: #ff7043;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
+.edit-save:hover:not(:disabled) {
+  background: #6d2d4c;
+  box-shadow: 0 2px 4px rgba(139, 58, 98, 0.2);
 }
 
-.heat-very-high {
-  background: #f4511e;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
+.edit-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.heat-critical {
-  background: #d32f2f;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 500;
-  text-align: center;
-  display: inline-block;
-}
-
-.action-item-row {
-  display: none;
-}
-
-.action-item-row.expanded {
-  display: table-row;
-}
-
-.action-item-content {
-  padding: 4px 6px;
-  background: #fafafa;
-}
-
-.action-item-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-}
-
-.action-item-table th {
+.edit-cancel {
   background: #f0f0f0;
-  padding: 3px 4px;
-  font-size: 11px;
-  height: auto;
-  border: 1px solid #e0e0e0;
+  color: #202124;
 }
 
-.action-item-table td {
-  padding: 3px 4px;
-  border: 1px solid #e0e0e0;
+.edit-cancel:hover {
+  background: #e8e8e8;
 }
 
-.no-data {
+/* ----- Risk Rating Heat Map ----- */
+.heatmap {
+  padding: 4px 8px;
   text-align: center;
-  padding: 12px;
-  color: #999;
-  font-style: italic;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1.1;
 }
+
+.heatmap-very-low {
+  background: #4caf50;
+  color: #fff;
+}
+
+.heatmap-low {
+  background: #8bc34a;
+  color: #fff;
+}
+
+.heatmap-medium {
+  background: #ff9800;
+  color: #fff;
+}
+
+.heatmap-high {
+  background: #ff7043;
+  color: #fff;
+}
+
+.heatmap-very-high {
+  background: #f4511e;
+  color: #fff;
+}
+
+.heatmap-critical {
+  background: #d32f2f;
+  color: #fff;
+}
+
+.heatmap-neutral {
+  background: #9e9e9e;
+  color: #fff;
+}
+
 ```
 
 ## Design Features
