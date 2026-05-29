@@ -421,12 +421,26 @@ function updateField(entityId, field, value) {
   return updateObject(c.base, c.sid, entityId, fields);
 }
 
+/* RelatedWork ties a Case (Risk/Issue/Request) to a WorkItem (the project).
+   Without it the new item is created but never appears in the project view. */
+function linkToProject(base, sid, caseId, projId) {
+  return createObject(base, sid, 'RelatedWork', {
+    Case: caseId,
+    WorkItem: projId
+  });
+}
+
 function createEntity(entityType, fields, label) {
   var c;
   try { c = getContext(); } catch (e) { alert('Cannot create ' + label + ': ' + e.message); return; }
   fields.PlannedFor = c.projId;
   createObject(c.base, c.sid, entityType, fields)
-    .then(function () { location.reload(); })
+    .then(function (res) {
+      var caseId = res && res.id;
+      if (!caseId) { location.reload(); return; }   /* no id returned — nothing to link */
+      return linkToProject(c.base, c.sid, caseId, c.projId)
+        .then(function () { location.reload(); });
+    })
     .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); });
 }
 
@@ -657,4 +671,5 @@ setTimeout(function () {
 | Picklist edits could send invalid values | Dropdowns are built from the real values present in your data (`PICK`), and the original path is sent on save |
 | Risk Rating editable / stale | Risk Rating is read-only; editing Impact or Likelihood reloads so the recomputed rating shows |
 | Create returned HTTP 500 (wrong `/upsert` body) | Create now uses `PUT /objects/{EntityType}`; update uses `POST /objects/{EntityType}/{id}` — the documented REST endpoints |
+| New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
 ```
