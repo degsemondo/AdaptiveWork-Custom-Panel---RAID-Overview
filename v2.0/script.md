@@ -6,14 +6,15 @@ data-loading logic (CZQL `/query` endpoint, `Session` auth, `json.entities`) wit
 - **Clean picklist display** — values like `/C_RiskImpact/(5) Catastrophic` and
   `/CaseState/New` are stripped to their label (`(5) Catastrophic`, `New`).
 - **Inline editing** — click a cell to edit (text / date / dropdown), Save persists
-  via the `/upsert` endpoint, Cancel reverts. Picklist dropdowns are populated from
+  the `objects` REST endpoint, Cancel reverts. Picklist dropdowns are populated from
   the real values present in your project data, and saves send the exact path format
   AdaptiveWork expects.
 - **Fixed Risk columns** — Impact, Likelihood and Risk Rating (heat-map) render in
   three separate columns matching the 8-column Risks table in `html.md`. Risk Rating
   is read-only (AdaptiveWork computes it from Impact × Likelihood; editing Impact or
   Likelihood reloads so the new rating shows).
-- **Create** — New Risk / Issue / Request buttons create items via `/upsert`.
+- **Create** — New Risk / Issue / Request buttons create items via
+  `PUT /V2.0/services/data/objects/{EntityType}`.
 
 ## Paste this into the Script field
 
@@ -21,13 +22,13 @@ data-loading logic (CZQL `/query` endpoint, `Session` auth, `json.entities`) wit
 /* ============================================================
    AdaptiveWork Custom Panel — JavaScript (v2.0)
    - Loads Risks, Issues, Requests + their Actions via CZQL.
-   - Clean picklist labels, inline editing, create via /upsert.
+   - Clean picklist labels, inline editing, create + update via REST.
    Auth: Data field supplies { sessionId, project }.
    ============================================================ */
 
 /* ---------- 1. Constants ---------- */
-var API_QUERY  = '/V2.0/services/data/query';
-var API_UPSERT = '/V2.0/services/data/upsert';
+var API_QUERY   = '/V2.0/services/data/query';
+var API_OBJECTS = '/V2.0/services/data/objects';
 
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
@@ -375,21 +376,37 @@ function getContext() {
   return { sid: ctx.sessionId, base: 'https://' + apiHost, projId: ctx.project.id };
 }
 
-/* ---------- 14. Upsert (create + update) ----------
-   Insert: pass the TYPE path as Id (e.g. "/Risk") -> AdaptiveWork auto-generates
-           the instance and returns 201 { Id: "/Risk/..." }.
-   Update: pass the EXISTING instance id (e.g. "/Risk/guid") -> 200 OK. */
-function upsert(base, sid, idPath, fields) {
-  var url = base.replace(/\/$/, '') + API_UPSERT;
-  var insertEntity = { Id: idPath };
-  for (var k in fields) if (fields.hasOwnProperty(k)) insertEntity[k] = fields[k];
+/* ---------- 14. Create + update via the objects REST endpoint ----------
+   Create: PUT  /V2.0/services/data/objects/{EntityType}  body = { field: value }
+           -> { "id": "/Risk/..." }
+   Update: POST /V2.0/services/data/objects/{EntityType}/{id}  body = { field: value }
+   Reference / picklist values use the "/Type/Value" path format (as returned). */
+function createObject(base, sid, entityType, fields) {
+  var url = base.replace(/\/$/, '') + API_OBJECTS + '/' + entityType;
+  return fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Session ' + sid
+    },
+    body: JSON.stringify(fields)
+  })
+  .then(function (res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json().catch(function () { return {}; });
+  });
+}
+
+function updateObject(base, sid, entityId, fields) {
+  /* entityId is the full path e.g. "/Risk/guid" -> .../objects/Risk/guid */
+  var url = base.replace(/\/$/, '') + API_OBJECTS + '/' + String(entityId).replace(/^\//, '');
   return fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Session ' + sid
     },
-    body: JSON.stringify({ insertEntity: insertEntity })
+    body: JSON.stringify(fields)
   })
   .then(function (res) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -401,14 +418,14 @@ function updateField(entityId, field, value) {
   var c = getContext();
   var fields = {};
   fields[field] = value;
-  return upsert(c.base, c.sid, entityId, fields);
+  return updateObject(c.base, c.sid, entityId, fields);
 }
 
-function createEntity(typePath, fields, label) {
+function createEntity(entityType, fields, label) {
   var c;
   try { c = getContext(); } catch (e) { alert('Cannot create ' + label + ': ' + e.message); return; }
   fields.PlannedFor = c.projId;
-  upsert(c.base, c.sid, typePath, fields)
+  createObject(c.base, c.sid, entityType, fields)
     .then(function () { location.reload(); })
     .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); });
 }
@@ -416,17 +433,17 @@ function createEntity(typePath, fields, label) {
 function createNewRisk() {
   var name = prompt('Enter risk name:');
   if (!name) return;
-  createEntity('/Risk', { Title: name, State: '/CaseState/New' }, 'risk');
+  createEntity('Risk', { Title: name }, 'risk');
 }
 function createNewIssue() {
   var name = prompt('Enter issue name:');
   if (!name) return;
-  createEntity('/Issue', { Title: name, State: '/CaseState/New' }, 'issue');
+  createEntity('Issue', { Title: name }, 'issue');
 }
 function createNewRequest() {
   var name = prompt('Enter request name:');
   if (!name) return;
-  createEntity('/EnhancementRequest', { Title: name, State: '/CaseState/New' }, 'request');
+  createEntity('EnhancementRequest', { Title: name }, 'request');
 }
 
 /* ---------- 15. Inline editing ---------- */
@@ -639,5 +656,5 @@ setTimeout(function () {
 | Could no longer edit fields | Restored `startEdit` / `saveEdit` / `cancelEdit` + click delegation in `initUI()` |
 | Picklist edits could send invalid values | Dropdowns are built from the real values present in your data (`PICK`), and the original path is sent on save |
 | Risk Rating editable / stale | Risk Rating is read-only; editing Impact or Likelihood reloads so the recomputed rating shows |
-| Updates used an uncertain endpoint | Updates now use the same `/upsert` call as create (existing `Id` ⇒ update) |
+| Create returned HTTP 500 (wrong `/upsert` body) | Create now uses `PUT /objects/{EntityType}`; update uses `POST /objects/{EntityType}/{id}` — the documented REST endpoints |
 ```
