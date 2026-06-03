@@ -40,6 +40,14 @@ function addPick(field, raw) {
   if (PICK[field].indexOf(raw) === -1) PICK[field].push(raw);
 }
 
+/* User reference fields render as a dropdown of system users.
+   USERS = [{ id: '/User/..', name: '..' }]; USER_NAME maps id -> name. */
+var USERS = [];
+var USER_NAME = {};
+var USER_FIELDS = ['AssignedTo'];
+function isUserField(f) { return USER_FIELDS.indexOf(f) > -1; }
+function rememberUser(id, name) { if (id) USER_NAME[id] = name || USER_NAME[id] || cleanLabel(id); }
+
 /* Canonical, fully-ordered option labels for the calculated-risk picklists.
    These always appear in the dropdowns (Impact / Probability) in this order,
    regardless of which values existing records happen to use. The API read/write
@@ -69,6 +77,19 @@ function pickPrefix(field) {
    - `current` (the row's raw value) is always included so it stays selectable. */
 function pickOptionList(field, current) {
   var out = [], seen = {};
+
+  /* User reference field — options are the system users (value = id, label = name). */
+  if (isUserField(field)) {
+    function addU(id, name) {
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      out.push({ raw: id, label: name || USER_NAME[id] || cleanLabel(id) });
+    }
+    USERS.forEach(function (u) { addU(u.id, u.name); });
+    addU(current, USER_NAME[current]);
+    return out;
+  }
+
   function add(raw) {
     if (raw === null || raw === undefined || raw === '') return;
     var lbl = cleanLabel(raw);
@@ -167,6 +188,7 @@ function toRisk(e) {
     likelihoodRaw: likeRaw,    likelihood: cleanLabel(likeRaw)   || '—',
     riskRating:    cleanLabel(rateRaw) || '—',
     statusRaw:     stRaw,      status:     cleanLabel(stRaw) || 'Open',
+    ownerRaw:      (e.AssignedTo && e.AssignedTo.id) || '',
     owner:         (e.AssignedTo && e.AssignedTo.Name) || '—',
     dueDate:       e.DueDate || null,
     rawId:         e.id || ''
@@ -181,6 +203,7 @@ function toIssue(e) {
     name:        e.Title || '(unnamed)',
     priorityRaw: prRaw, priority: cleanLabel(prRaw) || 'Medium',
     statusRaw:   stRaw, status:   cleanLabel(stRaw) || 'Open',
+    ownerRaw:    (e.AssignedTo && e.AssignedTo.id) || '',
     owner:       (e.AssignedTo && e.AssignedTo.Name) || '—',
     raised:      e.CreatedOn || null,
     dueDate:     e.DueDate || null,
@@ -315,6 +338,7 @@ function editCell(field, id, rawVal, display, extra) {
 /* Inner HTML for a cell given its field + raw value (used after save/cancel). */
 function cellDisplay(field, raw) {
   if (field === 'DueDate') return '<span class="action-due ' + dueCls(raw) + '">' + fmtDate(raw) + '</span>';
+  if (isUserField(field)) return esc(raw ? (USER_NAME[raw] || cleanLabel(raw)) : '—');
   if (field === 'State' || field === 'Priority') return pill(cleanLabel(raw));
   if (isPick(field)) return esc(cleanLabel(raw));
   return esc(raw);
@@ -338,7 +362,7 @@ function renderRisks(risks, actionMap) {
       editCell('C_Likelihood', r.rawId, r.likelihoodRaw, esc(r.likelihood)) +
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
       editCell('State',        r.rawId, r.statusRaw,     pill(r.status)) +
-      '<td>' + esc(r.owner) + '</td>' +
+      editCell('AssignedTo',   r.rawId, r.ownerRaw,      esc(r.owner)) +
       editCell('DueDate',      r.rawId, r.dueDate || '', '<span class="action-due ' + dueCls(r.dueDate) + '">' + fmtDate(r.dueDate) + '</span>') +
       '</tr>' +
       '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="8">' + actionsBlock(actions) + '</td></tr>';
@@ -360,7 +384,7 @@ function renderIssues(issues, actionMap) {
       editCell('Title',    issue.rawId, issue.name,        esc(issue.name)) +
       editCell('Priority', issue.rawId, issue.priorityRaw, pill(issue.priority)) +
       editCell('State',    issue.rawId, issue.statusRaw,   pill(issue.status)) +
-      '<td>' + esc(issue.owner) + '</td>' +
+      editCell('AssignedTo', issue.rawId, issue.ownerRaw,  esc(issue.owner)) +
       '<td>' + fmtDate(issue.raised) + '</td>' +
       editCell('DueDate',  issue.rawId, issue.dueDate || '', '<span class="action-due ' + dueCls(issue.dueDate) + '">' + fmtDate(issue.dueDate) + '</span>') +
       '</tr>' +
@@ -399,7 +423,9 @@ function renderAll(risks, issues, requests, actionMap) {
     addPick('C_Impact', r.impactRaw);
     addPick('C_Likelihood', r.likelihoodRaw);
     addPick('State', r.statusRaw);
+    rememberUser(r.ownerRaw, r.owner);
   });
+  issues.forEach(function (i) { rememberUser(i.ownerRaw, i.owner); });
   issues.forEach(function (i) {
     addPick('Priority', i.priorityRaw);
     addPick('State', i.statusRaw);
@@ -518,7 +544,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'C_Likelihood' },
       { type: 'static', html: '—' },
       { type: 'pick',   field: 'State' },
-      { type: 'static', html: '—' },
+      { type: 'pick',   field: 'AssignedTo' },
       { type: 'date',   field: 'DueDate', actions: true }
     ]
   },
@@ -528,7 +554,7 @@ var NEW_ROW_DEFS = {
       { type: 'text',   field: 'Title', placeholder: 'Issue name' },
       { type: 'pick',   field: 'Priority' },
       { type: 'pick',   field: 'State' },
-      { type: 'static', html: '—' },
+      { type: 'pick',   field: 'AssignedTo' },
       { type: 'static', html: '—' },
       { type: 'date',   field: 'DueDate', actions: true }
     ]
@@ -637,8 +663,8 @@ function startEdit(cell) {
   var value = cell.getAttribute('data-value') || '';
   var inputHtml;
 
-  if (isPick(field)) {
-    inputHtml = '<select class="edit-input">' + pickOptionsHtml(field, value, false) + '</select>';
+  if (isPick(field) || isUserField(field)) {
+    inputHtml = '<select class="edit-input">' + pickOptionsHtml(field, value, isUserField(field)) + '</select>';
   } else if (field === 'DueDate') {
     inputHtml = '<input type="date" class="edit-input" value="' + (value ? value.split('T')[0] : '') + '" />';
   } else {
@@ -787,16 +813,24 @@ setTimeout(function () {
   var qRequests =
     "SELECT Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
     "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
+  /* System users, for the Owner dropdown. */
+  var qUsers = "SELECT Name FROM User";
 
   Promise.all([
     czql(c.base, c.sid, qRisks),
     czql(c.base, c.sid, qIssues),
-    czql(c.base, c.sid, qRequests)
+    czql(c.base, c.sid, qRequests),
+    czql(c.base, c.sid, qUsers).catch(function () { return []; })   /* non-fatal */
   ])
   .then(function (results) {
     var risks    = results[0].map(toRisk);
     var issues   = results[1].map(toIssue);
     var requests = results[2].map(toRequest);
+
+    USERS = (results[3] || []).map(function (u) {
+      return { id: u.id, name: u.Name || cleanLabel(u.id) };
+    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    USERS.forEach(function (u) { rememberUser(u.id, u.name); });
 
     var caseIds = []
       .concat(results[0].map(function (e) { return e.id; }))
@@ -840,4 +874,5 @@ setTimeout(function () {
 | New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
 | "New …" used an ugly `prompt()` pop-up | Clicking a "New …" button now inserts an inline editable draft row at the top of the table (name + picklists + due date, Save/Cancel, Enter to save / Esc to cancel) |
 | Impact / Probability dropdowns only listed values already in use | Canonical, fully-ordered option lists for `C_Impact` (1 - Minor … 6 - Severe) and `C_Likelihood` (1 - Unlikely … 6 - Very Likely) always show; raw `/Type/Value` path is reused from data or rebuilt from the detected prefix. "Likelihood" column header renamed to "Probability" |
+| Owner was read-only text | Owner (`AssignedTo`) is now an editable dropdown of system users (`SELECT Name FROM User`), on both existing rows and the new-item draft row. Sends the `/User/…` id; falls back gracefully if the user query fails |
 ```
