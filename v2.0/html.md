@@ -47,6 +47,11 @@
         <span class="aw-badge badge-request" id="badge-requests">0</span>
       </button>
     </div>
+
+    <button class="aw-btn" id="btn-export" aria-label="Export all tabs to Excel">
+      <i class="ti ti-file-spreadsheet" style="font-size:14px" aria-hidden="true"></i>
+      Export
+    </button>
   </div>
 
   <div class="aw-body">

@@ -62,6 +62,7 @@ Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 - **New**: Inline "new item" draft row for creating Risks/Issues/Requests (no pop-up)
 - **New**: `RelatedWork` link created on add so new items show in the project view
 - **New**: Owner field is a server-side **type-ahead** of system users
+- **New**: Export all tabs (with action items) to a multi-sheet Excel workbook
 - **Enhancement**: Canonical, ordered Impact/Probability dropdowns; "Likelihood" → "Probability"
 - **Enhancement**: Clean picklist labels with raw-path round-tripping
 

@@ -30,6 +30,9 @@ data-loading logic (CZQL `/query` endpoint, `Session` auth, `json.entities`) wit
 var API_QUERY   = '/V2.0/services/data/query';
 var API_OBJECTS = '/V2.0/services/data/objects';
 
+/* Latest loaded data, retained so "Export to Excel" can use it. */
+var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
+
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
 var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'State', 'Priority', 'RequestType'];
@@ -456,6 +459,7 @@ function renderRequests(requests, actionMap) {
 
 /* Collect picklist options from loaded data, then render everything. */
 function renderAll(risks, issues, requests, actionMap) {
+  DATA = { risks: risks, issues: issues, requests: requests, actionMap: actionMap };
   PICK = {};
   risks.forEach(function (r) {
     addPick('C_Impact', r.impactRaw);
@@ -851,6 +855,95 @@ function initUI() {
   if (nr) nr.addEventListener('click', createNewRisk);
   if (ni) ni.addEventListener('click', createNewIssue);
   if (nq) nq.addEventListener('click', createNewRequest);
+
+  var ex = document.getElementById('btn-export');
+  if (ex) ex.addEventListener('click', exportToExcel);
+}
+
+/* ---------- 17b. Export to Excel ----------
+   Builds a multi-sheet SpreadsheetML 2003 workbook (no external library):
+   one sheet per tab (Risks / Issues / Requests), with each record's action
+   items listed as rows beneath it. Opens in Excel as separate sheets. */
+function xmlEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function xlRow(cells, styleId) {
+  var s = styleId ? ' ss:StyleID="' + styleId + '"' : '';
+  return '<Row>' + cells.map(function (c) {
+    return '<Cell' + s + '><Data ss:Type="String">' + xmlEsc(c) + '</Data></Cell>';
+  }).join('') + '</Row>';
+}
+function xlSheet(name, header, rows) {
+  var safe = String(name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
+  return '<Worksheet ss:Name="' + xmlEsc(safe) + '"><Table>' +
+    xlRow(header, 'hdr') +
+    rows.map(function (r) { return xlRow(r); }).join('') +
+    '</Table></Worksheet>';
+}
+function exportDateCell(iso) { return iso ? fmtDate(iso) : ''; }
+function exportActionRow(a, len) {
+  var row = ['', 'Action', a.name || '', a.assignee || '', a.status || '', exportDateCell(a.dueDate)];
+  while (row.length < len) row.push('');
+  return row.slice(0, len);
+}
+function exportRowsRisks() {
+  var rows = [];
+  DATA.risks.forEach(function (r) {
+    rows.push([r.name, r.impact, r.likelihood, r.riskRating, r.status, r.owner, exportDateCell(r.dueDate)]);
+    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 7)); });
+  });
+  return rows;
+}
+function exportRowsIssues() {
+  var rows = [];
+  DATA.issues.forEach(function (i) {
+    rows.push([i.name, i.priority, i.status, i.owner, exportDateCell(i.raised), exportDateCell(i.dueDate)]);
+    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); });
+  });
+  return rows;
+}
+function exportRowsRequests() {
+  var rows = [];
+  DATA.requests.forEach(function (q) {
+    rows.push([q.name, q.type, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
+    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); });
+  });
+  return rows;
+}
+function exportToExcel() {
+  if (!DATA.risks.length && !DATA.issues.length && !DATA.requests.length) {
+    alert('Nothing to export yet — the panel is still loading.');
+    return;
+  }
+  var workbook =
+    '<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"' +
+    ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
+    ' xmlns:x="urn:schemas-microsoft-com:office:excel"' +
+    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+    '<Styles><Style ss:ID="hdr"><Font ss:Bold="1"/>' +
+    '<Interior ss:Color="#F3E5E8" ss:Pattern="Solid"/></Style></Styles>' +
+    xlSheet('Risks',
+      ['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date'],
+      exportRowsRisks()) +
+    xlSheet('Issues',
+      ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
+      exportRowsIssues()) +
+    xlSheet('Requests',
+      ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
+      exportRowsRequests()) +
+    '</Workbook>';
+
+  var blob = new Blob(['﻿' + workbook], { type: 'application/vnd.ms-excel' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xls';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
 
 /* ---------- 18. Bootstrap ---------- */
