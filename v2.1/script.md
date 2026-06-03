@@ -861,24 +861,12 @@ function initUI() {
 }
 
 /* ---------- 17b. Export to Excel ----------
-   Produces a styled .xlsx with one sheet per tab (Risks / Issues / Requests),
-   each record's action items listed as rows beneath it. Uses xlsx-js-style
-   (a SheetJS fork with cell-formatting support), lazy-loaded from CDN on first
-   use so it adds nothing to normal page load. */
-var SHEETJS_URL = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx-js-style.min.js';
-var sheetJsPromise = null;
-function loadSheetJs() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  if (sheetJsPromise) return sheetJsPromise;
-  sheetJsPromise = new Promise(function (resolve, reject) {
-    var s = document.createElement('script');
-    s.src = SHEETJS_URL;
-    s.onload = function () { window.XLSX ? resolve(window.XLSX) : reject(new Error('Excel library failed to initialise.')); };
-    s.onerror = function () { sheetJsPromise = null; reject(new Error('Could not load the Excel library (network/CDN blocked).')); };
-    document.head.appendChild(s);
-  });
-  return sheetJsPromise;
-}
+   Builds a styled multi-sheet SpreadsheetML 2003 workbook entirely in-browser
+   (no external library / no CDN, so it works in locked-down environments).
+   One sheet per tab (Risks / Issues / Requests); each record's action items are
+   listed as rows beneath it. Formatting: bold white-on-burgundy headers, a
+   bordered grid, Risk Rating cells filled with the on-screen heat-map colours,
+   italic-grey action rows, and a frozen header row. */
 function exportDateCell(iso) { return iso ? fmtDate(iso) : ''; }
 function exportActionRow(a, len) {
   var row = ['', 'Action', a.name || '', a.assignee || '', a.status || '', exportDateCell(a.dueDate)];
@@ -914,83 +902,103 @@ function exportRowsRequests() {
   return { rows: rows, kinds: kinds };
 }
 
-/* Risk Rating -> Excel fill colour (mirrors the on-screen heat map). */
-function exportHeatHex(value) {
+/* SpreadsheetML helpers ------------------------------------------------- */
+function xmlEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function xlCell(v, styleId) {
+  return '<Cell' + (styleId ? ' ss:StyleID="' + styleId + '"' : '') +
+    '><Data ss:Type="String">' + xmlEsc(v) + '</Data></Cell>';
+}
+/* Risk Rating value -> style id (mirrors the on-screen heat map). */
+function exportHeatStyle(value) {
   var map = {
-    'heatmap-very-low': '4CAF50', 'heatmap-low': '8BC34A', 'heatmap-medium': 'FF9800',
-    'heatmap-high': 'FF7043', 'heatmap-very-high': 'F4511E', 'heatmap-critical': 'D32F2F'
+    'heatmap-very-low': 'hmVeryLow', 'heatmap-low': 'hmLow', 'heatmap-medium': 'hmMedium',
+    'heatmap-high': 'hmHigh', 'heatmap-very-high': 'hmVeryHigh', 'heatmap-critical': 'hmCritical'
   };
-  return map[riskRatingHeatMap(value)] || null;   /* null = leave unfilled (neutral/blank) */
+  return map[riskRatingHeatMap(value)] || 'rec';   /* neutral/blank -> plain record cell */
 }
-function exportCellStyle(kind, col, value, heatCol) {
-  var line = { style: 'thin', color: { rgb: 'E0E0E0' } };
-  var border = { top: line, bottom: line, left: line, right: line };
-  if (kind === 'header') {
-    return {
-      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-      fill: { patternType: 'solid', fgColor: { rgb: '8B3A62' } },
-      alignment: { vertical: 'center' }, border: border
-    };
+function workbookStyles() {
+  function border() {
+    return '<Borders>' +
+      '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
+      '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
+      '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
+      '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
+      '</Borders>';
   }
-  if (kind === 'action') {
-    return {
-      font: { italic: true, color: { rgb: '5F6368' }, sz: 10 },
-      fill: { patternType: 'solid', fgColor: { rgb: 'FAFBFC' } }, border: border
-    };
+  function heat(id, color) {
+    return '<Style ss:ID="' + id + '"><Font ss:Bold="1" ss:Color="#FFFFFF"/>' +
+      '<Interior ss:Color="' + color + '" ss:Pattern="Solid"/>' +
+      '<Alignment ss:Vertical="Center" ss:Horizontal="Center"/>' + border() + '</Style>';
   }
-  /* record row */
-  if (heatCol != null && col === heatCol) {
-    var hex = exportHeatHex(value);
-    if (hex) {
-      return {
-        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-        fill: { patternType: 'solid', fgColor: { rgb: hex } },
-        alignment: { vertical: 'center', horizontal: 'center' }, border: border
-      };
-    }
-  }
-  return { font: { sz: 11 }, alignment: { vertical: 'center' }, border: border };
+  return '<Styles>' +
+    '<Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/></Style>' +
+    '<Style ss:ID="hdr"><Font ss:Bold="1" ss:Color="#FFFFFF"/>' +
+      '<Interior ss:Color="#8B3A62" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/>' + border() + '</Style>' +
+    '<Style ss:ID="rec"><Alignment ss:Vertical="Center"/>' + border() + '</Style>' +
+    '<Style ss:ID="act"><Font ss:Italic="1" ss:Color="#5F6368"/>' +
+      '<Interior ss:Color="#FAFBFC" ss:Pattern="Solid"/>' + border() + '</Style>' +
+    heat('hmVeryLow', '#4CAF50') + heat('hmLow', '#8BC34A') + heat('hmMedium', '#FF9800') +
+    heat('hmHigh', '#FF7043') + heat('hmVeryHigh', '#F4511E') + heat('hmCritical', '#D32F2F') +
+    '</Styles>';
 }
-/* Build a worksheet from a header + { rows, kinds }, applying styles.
-   heatCol = column index to colour by Risk Rating (null = none). */
-function buildStyledSheet(XLSX, header, built, heatCol) {
-  var ws = XLSX.utils.aoa_to_sheet([header].concat(built.rows));
-  var range = XLSX.utils.decode_range(ws['!ref']);
-  ws['!cols'] = header.map(function (h, i) { return { wch: i === 0 ? 28 : 15 }; });
-  for (var R = range.s.r; R <= range.e.r; R++) {
-    var kind = R === 0 ? 'header' : built.kinds[R - 1];
-    for (var C = range.s.c; C <= range.e.c; C++) {
-      var addr = XLSX.utils.encode_cell({ r: R, c: C });
-      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-      ws[addr].s = exportCellStyle(kind, C, ws[addr].v, heatCol);
-    }
-  }
-  return ws;
+/* Build one <Worksheet>. heatCol = column to colour by Risk Rating (null = none). */
+function buildSheetXml(name, header, built, heatCol) {
+  var safe = String(name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
+  var cols = header.map(function (h, i) {
+    return '<Column ss:Width="' + (i === 0 ? 200 : 110) + '"/>';
+  }).join('');
+  var headerRow = '<Row>' + header.map(function (h) { return xlCell(h, 'hdr'); }).join('') + '</Row>';
+  var bodyRows = built.rows.map(function (row, idx) {
+    var kind = built.kinds[idx];
+    return '<Row>' + row.map(function (val, c) {
+      var sid = kind === 'action' ? 'act'
+        : (heatCol != null && c === heatCol) ? exportHeatStyle(val)
+        : 'rec';
+      return xlCell(val, sid);
+    }).join('') + '</Row>';
+  }).join('');
+  return '<Worksheet ss:Name="' + xmlEsc(safe) + '">' +
+    '<Table>' + cols + headerRow + bodyRows + '</Table>' +
+    '<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">' +
+      '<FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal>' +
+      '<TopRowBottomPane>1</TopRowBottomPane><ActivePane>2</ActivePane>' +
+    '</WorksheetOptions></Worksheet>';
 }
 function exportToExcel() {
   if (!DATA.risks.length && !DATA.issues.length && !DATA.requests.length) {
     alert('Nothing to export yet — the panel is still loading.');
     return;
   }
-  var btn = document.getElementById('btn-export');
-  if (btn) { btn.disabled = true; }
-  loadSheetJs().then(function (XLSX) {
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+  var workbook =
+    '<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"' +
+    ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
+    ' xmlns:x="urn:schemas-microsoft-com:office:excel"' +
+    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+    workbookStyles() +
+    buildSheetXml('Risks',
       ['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date'],
-      exportRowsRisks(), 3), 'Risks');
-    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+      exportRowsRisks(), 3) +
+    buildSheetXml('Issues',
       ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
-      exportRowsIssues(), null), 'Issues');
-    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+      exportRowsIssues(), null) +
+    buildSheetXml('Requests',
       ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
-      exportRowsRequests(), null), 'Requests');
-    XLSX.writeFile(wb, 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
-  }).catch(function (err) {
-    alert('Export failed: ' + err.message);
-  }).then(function () {
-    if (btn) { btn.disabled = false; }
-  });
+      exportRowsRequests(), null) +
+    '</Workbook>';
+
+  var blob = new Blob(['﻿' + workbook], { type: 'application/vnd.ms-excel' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xls';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
 
 /* ---------- 18. Bootstrap ---------- */
