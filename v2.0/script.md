@@ -40,6 +40,68 @@ function addPick(field, raw) {
   if (PICK[field].indexOf(raw) === -1) PICK[field].push(raw);
 }
 
+/* Canonical, fully-ordered option labels for the calculated-risk picklists.
+   These always appear in the dropdowns (Impact / Probability) in this order,
+   regardless of which values existing records happen to use. The API read/write
+   is unchanged — we still send the "/Type/Value" raw path. */
+var PICK_OPTIONS = {
+  C_Impact:     ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
+  C_Likelihood: ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely']
+};
+/* Fallback "/Type" prefix used only if no existing record reveals it. */
+var PICK_PREFIX_DEFAULT = { C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability' };
+
+/* Detect the "/Type" prefix for a field from any raw value present in the data. */
+function pickPrefix(field) {
+  var arr = PICK[field] || [];
+  for (var i = 0; i < arr.length; i++) {
+    var v = arr[i];
+    if (v && v.charAt(0) === '/') { var p = v.split('/'); p.pop(); return p.join('/'); }
+  }
+  return PICK_PREFIX_DEFAULT[field] || '';
+}
+
+/* Build [{ raw, label }] options for a picklist field.
+   - Fields with a canonical list (Impact / Probability) show all options in
+     order; the raw path is reused from the data when available, else built from
+     the detected/default "/Type" prefix.
+   - Other fields fall back to the values present in the loaded data.
+   - `current` (the row's raw value) is always included so it stays selectable. */
+function pickOptionList(field, current) {
+  var out = [], seen = {};
+  function add(raw) {
+    if (raw === null || raw === undefined || raw === '') return;
+    var lbl = cleanLabel(raw);
+    if (seen[lbl]) return;
+    seen[lbl] = true;
+    out.push({ raw: raw, label: lbl });
+  }
+
+  var canon = PICK_OPTIONS[field];
+  if (canon) {
+    var prefix = pickPrefix(field);
+    var byLabel = {};
+    (PICK[field] || []).forEach(function (r) { byLabel[cleanLabel(r)] = r; });
+    canon.forEach(function (lbl) {
+      add(byLabel[lbl] || (prefix ? prefix + '/' + lbl : lbl));
+    });
+    (PICK[field] || []).forEach(add);   /* keep any non-standard legacy values */
+  } else {
+    (PICK[field] || []).forEach(add);
+  }
+  add(current);
+  return out;
+}
+
+/* <option> HTML for a picklist field. */
+function pickOptionsHtml(field, current, includeBlank) {
+  var html = includeBlank ? '<option value="">—</option>' : '';
+  return html + pickOptionList(field, current).map(function (o) {
+    return '<option value="' + esc(o.raw) + '"' +
+      (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+  }).join('');
+}
+
 /* ---------- 2. CZQL fetch wrapper ---------- */
 function czql(baseUrl, sessionId, query) {
   var url = baseUrl.replace(/\/$/, '') + API_QUERY;
@@ -499,13 +561,9 @@ function newRowCellHtml(cell) {
       : '';
     return '<td><input type="date" class="new-input edit-input" data-field="' + cell.field + '" />' + actions + '</td>';
   }
-  /* pick — options come from values already present in the loaded data */
-  var opts = (PICK[cell.field] || []).slice();
+  /* pick — canonical list for Impact/Probability, else values present in data */
   return '<td><select class="new-input edit-input" data-field="' + cell.field + '">' +
-    '<option value="">—</option>' +
-    opts.map(function (o) {
-      return '<option value="' + esc(o) + '">' + esc(cleanLabel(o)) + '</option>';
-    }).join('') +
+    pickOptionsHtml(cell.field, '', true) +
     '</select></td>';
 }
 
@@ -580,11 +638,7 @@ function startEdit(cell) {
   var inputHtml;
 
   if (isPick(field)) {
-    var opts = (PICK[field] || []).slice();
-    if (value && opts.indexOf(value) === -1) opts.push(value);
-    inputHtml = '<select class="edit-input">' + opts.map(function (o) {
-      return '<option value="' + esc(o) + '"' + (o === value ? ' selected' : '') + '>' + esc(cleanLabel(o)) + '</option>';
-    }).join('') + '</select>';
+    inputHtml = '<select class="edit-input">' + pickOptionsHtml(field, value, false) + '</select>';
   } else if (field === 'DueDate') {
     inputHtml = '<input type="date" class="edit-input" value="' + (value ? value.split('T')[0] : '') + '" />';
   } else {
@@ -785,4 +839,5 @@ setTimeout(function () {
 | Create returned HTTP 500 (wrong `/upsert` body) | Create now uses `PUT /objects/{EntityType}`; update uses `POST /objects/{EntityType}/{id}` — the documented REST endpoints |
 | New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
 | "New …" used an ugly `prompt()` pop-up | Clicking a "New …" button now inserts an inline editable draft row at the top of the table (name + picklists + due date, Save/Cancel, Enter to save / Esc to cancel) |
+| Impact / Probability dropdowns only listed values already in use | Canonical, fully-ordered option lists for `C_Impact` (1 - Minor … 6 - Severe) and `C_Likelihood` (1 - Unlikely … 6 - Very Likely) always show; raw `/Type/Value` path is reused from data or rebuilt from the detected prefix. "Likelihood" column header renamed to "Probability" |
 ```

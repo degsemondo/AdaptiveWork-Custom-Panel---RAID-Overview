@@ -83,7 +83,7 @@
               <th style="width:28px"></th>
               <th>Risk name</th>
               <th>Impact</th>
-              <th>Likelihood</th>
+              <th>Probability</th>
               <th>Risk Rating</th>
               <th>Status</th>
               <th>Owner</th>
