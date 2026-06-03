@@ -514,7 +514,7 @@ function renderIssues(issues, actionMap) {
 function renderRequests(requests, actionMap) {
   var tbody = document.getElementById('requests-body');
   if (!requests.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No change requests found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="no-data">No change requests found for this project.</div></td></tr>';
     document.getElementById('badge-requests').textContent = '0';
     return;
   }
@@ -523,13 +523,12 @@ function renderRequests(requests, actionMap) {
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
-      editCell('RequestType', req.rawId, req.typeRaw, esc(req.type)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
       '<td>' + fmtDate(req.submitted) + '</td>' +
       editCell('DueDate',     req.rawId, req.decisionBy || '', '<span class="action-due ' + dueCls(req.decisionBy) + '">' + fmtDate(req.decisionBy) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="7">' + actionsBlock(actions) + '</td></tr>';
+      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="6">' + actionsBlock(actions) + '</td></tr>';
   }).join('');
   document.getElementById('badge-requests').textContent = requests.length;
 }
@@ -685,7 +684,6 @@ var NEW_ROW_DEFS = {
     tbody: 'requests-body', label: 'change request',
     cells: [
       { type: 'text',   field: 'Title', placeholder: 'Change request name' },
-      { type: 'static', html: 'Change Request' },          /* Type fixed for this tab */
       { type: 'pick',   field: 'State' },
       { type: 'static', html: '—' },
       { type: 'static', html: '—' },
@@ -1012,9 +1010,9 @@ function exportRowsIssues() {
 function exportRowsRequests() {
   var rows = [], kinds = [];
   DATA.requests.forEach(function (q) {
-    rows.push([q.name, q.type, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
+    rows.push([q.name, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
     kinds.push('record');
-    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
+    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 5)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
@@ -1103,7 +1101,7 @@ function exportToExcel() {
       ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
       exportRowsIssues(), null) +
     buildSheetXml('Change Requests',
-      ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
+      ['Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
       exportRowsRequests(), null) +
     '</Workbook>';
 

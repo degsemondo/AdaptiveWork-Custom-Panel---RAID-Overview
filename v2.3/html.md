@@ -132,7 +132,6 @@
             <tr>
               <th style="width:28px"></th>
               <th>Request name</th>
-              <th>Type</th>
               <th>Status</th>
               <th>Requestor</th>
               <th>Submitted</th>
