@@ -23,10 +23,10 @@ user-friendly Owner type-ahead.
 - **Clean picklist labels** — `/Type/Value` paths are shown as their value
   (e.g. `New` instead of `/CaseState/New`) while the raw path is preserved for
   round-tripping to the API.
-- **Export to Excel** — an "Export" button in the header produces a multi-sheet
-  workbook (one sheet per tab: Risks / Issues / Requests) with each record's
-  action items listed beneath it. Self-contained SpreadsheetML — no external
-  library.
+- **Export to Excel** — an "Export" button in the header produces a real `.xlsx`
+  with one sheet per tab (Risks / Issues / Requests) and each record's action
+  items listed beneath it. The SheetJS library is lazy-loaded from CDN on first
+  use, so normal page load is unaffected.
 
 ### API / Endpoints
 - Create: `PUT /V2.0/services/data/objects/{EntityType}` → `{ id: "/Risk/…" }`

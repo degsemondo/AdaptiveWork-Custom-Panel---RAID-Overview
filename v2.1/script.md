@@ -861,25 +861,22 @@ function initUI() {
 }
 
 /* ---------- 17b. Export to Excel ----------
-   Builds a multi-sheet SpreadsheetML 2003 workbook (no external library):
-   one sheet per tab (Risks / Issues / Requests), with each record's action
-   items listed as rows beneath it. Opens in Excel as separate sheets. */
-function xmlEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function xlRow(cells, styleId) {
-  var s = styleId ? ' ss:StyleID="' + styleId + '"' : '';
-  return '<Row>' + cells.map(function (c) {
-    return '<Cell' + s + '><Data ss:Type="String">' + xmlEsc(c) + '</Data></Cell>';
-  }).join('') + '</Row>';
-}
-function xlSheet(name, header, rows) {
-  var safe = String(name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
-  return '<Worksheet ss:Name="' + xmlEsc(safe) + '"><Table>' +
-    xlRow(header, 'hdr') +
-    rows.map(function (r) { return xlRow(r); }).join('') +
-    '</Table></Worksheet>';
+   Produces a real .xlsx with one sheet per tab (Risks / Issues / Requests),
+   each record's action items listed as rows beneath it. The SheetJS library
+   is lazy-loaded from CDN on first use, so it adds nothing to normal load. */
+var SHEETJS_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+var sheetJsPromise = null;
+function loadSheetJs() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (sheetJsPromise) return sheetJsPromise;
+  sheetJsPromise = new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = SHEETJS_URL;
+    s.onload = function () { window.XLSX ? resolve(window.XLSX) : reject(new Error('Excel library failed to initialise.')); };
+    s.onerror = function () { sheetJsPromise = null; reject(new Error('Could not load the Excel library (network/CDN blocked).')); };
+    document.head.appendChild(s);
+  });
+  return sheetJsPromise;
 }
 function exportDateCell(iso) { return iso ? fmtDate(iso) : ''; }
 function exportActionRow(a, len) {
@@ -916,34 +913,25 @@ function exportToExcel() {
     alert('Nothing to export yet — the panel is still loading.');
     return;
   }
-  var workbook =
-    '<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
-    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"' +
-    ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
-    ' xmlns:x="urn:schemas-microsoft-com:office:excel"' +
-    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
-    '<Styles><Style ss:ID="hdr"><Font ss:Bold="1"/>' +
-    '<Interior ss:Color="#F3E5E8" ss:Pattern="Solid"/></Style></Styles>' +
-    xlSheet('Risks',
-      ['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date'],
-      exportRowsRisks()) +
-    xlSheet('Issues',
-      ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
-      exportRowsIssues()) +
-    xlSheet('Requests',
-      ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
-      exportRowsRequests()) +
-    '</Workbook>';
-
-  var blob = new Blob(['﻿' + workbook], { type: 'application/vnd.ms-excel' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xls';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  var btn = document.getElementById('btn-export');
+  if (btn) { btn.disabled = true; }
+  loadSheetJs().then(function (XLSX) {
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
+      [['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date']]
+        .concat(exportRowsRisks())), 'Risks');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
+      [['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date']]
+        .concat(exportRowsIssues())), 'Issues');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
+      [['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by']]
+        .concat(exportRowsRequests())), 'Requests');
+    XLSX.writeFile(wb, 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  }).catch(function (err) {
+    alert('Export failed: ' + err.message);
+  }).then(function () {
+    if (btn) { btn.disabled = false; }
+  });
 }
 
 /* ---------- 18. Bootstrap ---------- */
