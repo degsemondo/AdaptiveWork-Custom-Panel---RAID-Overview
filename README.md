@@ -4,7 +4,7 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 ## Version
 
-**Current Stable Version: v1.1** (Bug fix release)
+**Current Stable Version: v2.1** (RAID editing & creation release)
 
 ## Features
 
@@ -31,10 +31,10 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 
-1. **HTML Field**: Copy contents of `v1.1-bug-fix/html.md` into the HTML field
-2. **CSS Field**: Copy contents of `v1.1-bug-fix/css.md` into the CSS field
-3. **Script Field**: Copy contents of `v1.1-bug-fix/script.md` into the Script field
-4. **Data Field**: Copy contents of `v1.1-bug-fix/data.md` into the Data field (JSON)
+1. **HTML Field**: Copy contents of `v2.1/html.md` into the HTML field
+2. **CSS Field**: Copy contents of `v2.1/css.md` into the CSS field
+3. **Script Field**: Copy contents of `v2.1/script.md` into the Script field
+4. **Data Field**: Copy contents of `v2.1/data.md` into the Data field (JSON)
 
 ## Technical Details
 
@@ -57,6 +57,17 @@ Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 - `filterTable/filterByStatus()` - Search and filter logic
 
 ## Version History
+
+### v2.1 (2026-06-03)
+- **New**: Inline "new item" draft row for creating Risks/Issues/Requests (no pop-up)
+- **New**: `RelatedWork` link created on add so new items show in the project view
+- **New**: Owner field is a server-side **type-ahead** of system users
+- **Enhancement**: Canonical, ordered Impact/Probability dropdowns; "Likelihood" → "Probability"
+- **Enhancement**: Clean picklist labels with raw-path round-tripping
+
+### v2.0 (2026-06)
+- Expanded Risk model (Impact, Probability, calculated Risk Rating with heat map)
+- Action items loaded per record; inline editing; REST `objects` create/update
 
 ### v1.1 (2026-05-28)
 - **Fixed**: Status field displaying "[object Object]" 

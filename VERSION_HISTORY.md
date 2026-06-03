@@ -1,5 +1,57 @@
 # Version History
 
+## v2.1 - RAID Editing & Creation Release (2026-06-03)
+
+Builds on v2.0 with full create/update support, cleaner picklists, and a
+user-friendly Owner type-ahead.
+
+### What's New
+- **Create via inline draft row** — clicking "New risk/issue/request" inserts an
+  editable row at the top of the table (name + picklist dropdowns + due date,
+  Save/Cancel, Enter to save / Esc to cancel). Replaces the old `prompt()` pop-up.
+- **Project linking** — after creating a Risk/Issue/Request, a `RelatedWork`
+  record is created (`Case` = new item id, `WorkItem` = project id) so the new
+  item appears in the project's RAID view.
+- **Canonical Impact / Probability options** — the Impact (`C_Impact`) and
+  Probability (`C_Likelihood`) dropdowns always show the full ordered option list
+  (1 - Minor … 6 - Severe / 1 - Unlikely … 6 - Very Likely), not just values
+  already in use. The "Likelihood" column header was renamed to "Probability".
+- **Owner type-ahead** — Owner (`AssignedTo`) is now an editable, debounced
+  type-ahead that searches system users server-side (`User WHERE Name LIKE
+  '%term%'`, 2+ chars) rather than bulk-loading everyone. Works on existing rows
+  and the new-item draft row; sends the `/User/…` id.
+- **Clean picklist labels** — `/Type/Value` paths are shown as their value
+  (e.g. `New` instead of `/CaseState/New`) while the raw path is preserved for
+  round-tripping to the API.
+
+### API / Endpoints
+- Create: `PUT /V2.0/services/data/objects/{EntityType}` → `{ id: "/Risk/…" }`
+- Update: `POST /V2.0/services/data/objects/{EntityType}/{id}`
+- Reference/picklist values sent as the `/Type/Value` path format.
+
+### Files Modified
+- `script.md`, `css.md`, `html.md`
+
+---
+
+## v2.0 - RAID Panel with Expanded Risk Model (2026-06)
+
+### What's New
+- Expanded Risk model: separate **Impact**, **Likelihood**, and calculated
+  **Risk Rating** columns with heat-map colouring (Risk Rating is read-only;
+  editing Impact or Likelihood reloads so the recomputed rating shows).
+- Two-phase data load: Risks/Issues/Requests, then their Action Items
+  (`WHERE Container IN (...)`).
+- Inline editing for picklist, text, and date fields with safe round-tripping
+  of raw picklist paths.
+- Create/update moved to the documented REST `objects` endpoints (fixing the
+  earlier HTTP 500 from the wrong `/upsert` body).
+
+### Files
+- `html.md`, `css.md`, `data.md`, `script.md`
+
+---
+
 ## v1.1 - Bug Fix Release (2026-05-28)
 
 ### Bug Fixed
