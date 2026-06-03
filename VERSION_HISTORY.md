@@ -23,10 +23,12 @@ user-friendly Owner type-ahead.
 - **Clean picklist labels** — `/Type/Value` paths are shown as their value
   (e.g. `New` instead of `/CaseState/New`) while the raw path is preserved for
   round-tripping to the API.
-- **Export to Excel** — an "Export" button in the header produces a real `.xlsx`
-  with one sheet per tab (Risks / Issues / Requests) and each record's action
-  items listed beneath it. The SheetJS library is lazy-loaded from CDN on first
-  use, so normal page load is unaffected.
+- **Export to Excel** — an "Export" button in the header produces a styled
+  `.xlsx` with one sheet per tab (Risks / Issues / Requests) and each record's
+  action items listed beneath it. Formatting: bold white-on-burgundy headers,
+  bordered grid, Risk Rating cells filled with the on-screen heat-map colours,
+  and action rows in italic grey. Built with xlsx-js-style, lazy-loaded from CDN
+  on first use, so normal page load is unaffected.
 
 ### API / Endpoints
 - Create: `PUT /V2.0/services/data/objects/{EntityType}` → `{ id: "/Risk/…" }`

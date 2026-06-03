@@ -861,10 +861,11 @@ function initUI() {
 }
 
 /* ---------- 17b. Export to Excel ----------
-   Produces a real .xlsx with one sheet per tab (Risks / Issues / Requests),
-   each record's action items listed as rows beneath it. The SheetJS library
-   is lazy-loaded from CDN on first use, so it adds nothing to normal load. */
-var SHEETJS_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+   Produces a styled .xlsx with one sheet per tab (Risks / Issues / Requests),
+   each record's action items listed as rows beneath it. Uses xlsx-js-style
+   (a SheetJS fork with cell-formatting support), lazy-loaded from CDN on first
+   use so it adds nothing to normal page load. */
+var SHEETJS_URL = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx-js-style.min.js';
 var sheetJsPromise = null;
 function loadSheetJs() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
@@ -884,29 +885,87 @@ function exportActionRow(a, len) {
   while (row.length < len) row.push('');
   return row.slice(0, len);
 }
+/* Each builder returns { rows: [[...]], kinds: ['record'|'action', ...] }. */
 function exportRowsRisks() {
-  var rows = [];
+  var rows = [], kinds = [];
   DATA.risks.forEach(function (r) {
     rows.push([r.name, r.impact, r.likelihood, r.riskRating, r.status, r.owner, exportDateCell(r.dueDate)]);
-    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 7)); });
+    kinds.push('record');
+    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 7)); kinds.push('action'); });
   });
-  return rows;
+  return { rows: rows, kinds: kinds };
 }
 function exportRowsIssues() {
-  var rows = [];
+  var rows = [], kinds = [];
   DATA.issues.forEach(function (i) {
     rows.push([i.name, i.priority, i.status, i.owner, exportDateCell(i.raised), exportDateCell(i.dueDate)]);
-    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); });
+    kinds.push('record');
+    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
   });
-  return rows;
+  return { rows: rows, kinds: kinds };
 }
 function exportRowsRequests() {
-  var rows = [];
+  var rows = [], kinds = [];
   DATA.requests.forEach(function (q) {
     rows.push([q.name, q.type, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
-    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); });
+    kinds.push('record');
+    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
   });
-  return rows;
+  return { rows: rows, kinds: kinds };
+}
+
+/* Risk Rating -> Excel fill colour (mirrors the on-screen heat map). */
+function exportHeatHex(value) {
+  var map = {
+    'heatmap-very-low': '4CAF50', 'heatmap-low': '8BC34A', 'heatmap-medium': 'FF9800',
+    'heatmap-high': 'FF7043', 'heatmap-very-high': 'F4511E', 'heatmap-critical': 'D32F2F'
+  };
+  return map[riskRatingHeatMap(value)] || null;   /* null = leave unfilled (neutral/blank) */
+}
+function exportCellStyle(kind, col, value, heatCol) {
+  var line = { style: 'thin', color: { rgb: 'E0E0E0' } };
+  var border = { top: line, bottom: line, left: line, right: line };
+  if (kind === 'header') {
+    return {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+      fill: { patternType: 'solid', fgColor: { rgb: '8B3A62' } },
+      alignment: { vertical: 'center' }, border: border
+    };
+  }
+  if (kind === 'action') {
+    return {
+      font: { italic: true, color: { rgb: '5F6368' }, sz: 10 },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FAFBFC' } }, border: border
+    };
+  }
+  /* record row */
+  if (heatCol != null && col === heatCol) {
+    var hex = exportHeatHex(value);
+    if (hex) {
+      return {
+        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+        fill: { patternType: 'solid', fgColor: { rgb: hex } },
+        alignment: { vertical: 'center', horizontal: 'center' }, border: border
+      };
+    }
+  }
+  return { font: { sz: 11 }, alignment: { vertical: 'center' }, border: border };
+}
+/* Build a worksheet from a header + { rows, kinds }, applying styles.
+   heatCol = column index to colour by Risk Rating (null = none). */
+function buildStyledSheet(XLSX, header, built, heatCol) {
+  var ws = XLSX.utils.aoa_to_sheet([header].concat(built.rows));
+  var range = XLSX.utils.decode_range(ws['!ref']);
+  ws['!cols'] = header.map(function (h, i) { return { wch: i === 0 ? 28 : 15 }; });
+  for (var R = range.s.r; R <= range.e.r; R++) {
+    var kind = R === 0 ? 'header' : built.kinds[R - 1];
+    for (var C = range.s.c; C <= range.e.c; C++) {
+      var addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+      ws[addr].s = exportCellStyle(kind, C, ws[addr].v, heatCol);
+    }
+  }
+  return ws;
 }
 function exportToExcel() {
   if (!DATA.risks.length && !DATA.issues.length && !DATA.requests.length) {
@@ -917,15 +976,15 @@ function exportToExcel() {
   if (btn) { btn.disabled = true; }
   loadSheetJs().then(function (XLSX) {
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date']]
-        .concat(exportRowsRisks())), 'Risks');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date']]
-        .concat(exportRowsIssues())), 'Issues');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by']]
-        .concat(exportRowsRequests())), 'Requests');
+    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+      ['Risk name', 'Impact', 'Probability', 'Risk Rating', 'Status', 'Owner', 'Due date'],
+      exportRowsRisks(), 3), 'Risks');
+    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+      ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
+      exportRowsIssues(), null), 'Issues');
+    XLSX.utils.book_append_sheet(wb, buildStyledSheet(XLSX,
+      ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
+      exportRowsRequests(), null), 'Requests');
     XLSX.writeFile(wb, 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
   }).catch(function (err) {
     alert('Export failed: ' + err.message);
