@@ -117,9 +117,12 @@ var PICK_OPTIONS = {
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
-/* Fallback "/Type" prefix used only if no existing record reveals it. */
+/* Fallback "/Type" prefix used only if no existing record reveals it.
+   Picklist TYPE names are "C_Risk" + the field's label, not the field API name
+   (Impact field C_Impact -> /C_RiskImpact; Probability field C_Likelihood ->
+   /C_RiskProbability), so Reporting Level -> /C_RiskReportingLevel. */
 var PICK_PREFIX_DEFAULT = {
-  C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability', C_ReportingLevel: '/C_ReportingLevel'
+  C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability', C_ReportingLevel: '/C_RiskReportingLevel'
 };
 
 /* Detect the "/Type" prefix for a field from any raw value present in the data. */
