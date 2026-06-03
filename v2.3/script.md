@@ -682,10 +682,10 @@ var NEW_ROW_DEFS = {
     ]
   },
   EnhancementRequest: {
-    tbody: 'requests-body', label: 'request',
+    tbody: 'requests-body', label: 'change request',
     cells: [
-      { type: 'text',   field: 'Title', placeholder: 'Request name' },
-      { type: 'pick',   field: 'RequestType' },
+      { type: 'text',   field: 'Title', placeholder: 'Change request name' },
+      { type: 'static', html: 'Change Request' },          /* Type fixed for this tab */
       { type: 'pick',   field: 'State' },
       { type: 'static', html: '—' },
       { type: 'static', html: '—' },
@@ -772,6 +772,11 @@ function saveNewRow(row) {
     var v = isUserField(f) ? (inp.getAttribute('data-user-id') || '') : inp.value;
     if (v) fields[f] = v;
   });
+  /* New items on the Change Requests tab are always Change Requests. */
+  if (entityType === 'EnhancementRequest' && !fields.RequestType) {
+    var rt = changeRequestTypeRaw();
+    if (rt) fields.RequestType = rt;
+  }
   if (!fields.Title) {
     alert('Please enter a name.');
     var t = row.querySelector('input[data-field="Title"]');
@@ -789,6 +794,20 @@ function saveNewRow(row) {
 function createNewRisk()    { openNewRow('Risk'); }
 function createNewIssue()   { openNewRow('Issue'); }
 function createNewRequest() { openNewRow('EnhancementRequest'); }
+
+/* Resolve the real "/Type/Value" path for RequestType = Change Request, so new
+   change requests are created with the right type (and show in this tab). Uses
+   metadata first, then a value already present in the data, else a best guess. */
+function changeRequestTypeRaw() {
+  function findIn(list) {
+    for (var i = 0; i < (list || []).length; i++) {
+      var raw = (list[i] && list[i].raw !== undefined) ? list[i].raw : list[i];
+      if (raw && cleanLabel(raw).toLowerCase() === 'change request') return raw;
+    }
+    return '';
+  }
+  return findIn(PICK_META.RequestType) || findIn(PICK.RequestType) || '/RequestType/Change Request';
+}
 
 /* ---------- 15. Inline editing ---------- */
 function startEdit(cell) {
