@@ -432,33 +432,145 @@ function linkToProject(base, sid, caseId, projId) {
 
 function createEntity(entityType, fields, label) {
   var c;
-  try { c = getContext(); } catch (e) { alert('Cannot create ' + label + ': ' + e.message); return; }
+  try { c = getContext(); } catch (e) { alert('Cannot create ' + label + ': ' + e.message); return Promise.reject(e); }
   fields.PlannedFor = c.projId;
-  createObject(c.base, c.sid, entityType, fields)
+  return createObject(c.base, c.sid, entityType, fields)
     .then(function (res) {
       var caseId = res && res.id;
       if (!caseId) { location.reload(); return; }   /* no id returned — nothing to link */
       return linkToProject(c.base, c.sid, caseId, c.projId)
         .then(function () { location.reload(); });
     })
-    .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); });
+    .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); throw err; });
 }
 
-function createNewRisk() {
-  var name = prompt('Enter risk name:');
-  if (!name) return;
-  createEntity('Risk', { Title: name }, 'risk');
+/* ---------- 14b. Inline "new item" draft row ----------
+   Clicking a "New …" button inserts an editable draft row at the top of the
+   table (no pop-up). The user fills it in and clicks Save (or presses Enter). */
+var NEW_ROW_DEFS = {
+  Risk: {
+    tbody: 'risks-body', label: 'risk',
+    cells: [
+      { type: 'text',   field: 'Title', placeholder: 'Risk name' },
+      { type: 'pick',   field: 'C_Impact' },
+      { type: 'pick',   field: 'C_Likelihood' },
+      { type: 'static', html: '—' },
+      { type: 'pick',   field: 'State' },
+      { type: 'static', html: '—' },
+      { type: 'date',   field: 'DueDate', actions: true }
+    ]
+  },
+  Issue: {
+    tbody: 'issues-body', label: 'issue',
+    cells: [
+      { type: 'text',   field: 'Title', placeholder: 'Issue name' },
+      { type: 'pick',   field: 'Priority' },
+      { type: 'pick',   field: 'State' },
+      { type: 'static', html: '—' },
+      { type: 'static', html: '—' },
+      { type: 'date',   field: 'DueDate', actions: true }
+    ]
+  },
+  EnhancementRequest: {
+    tbody: 'requests-body', label: 'request',
+    cells: [
+      { type: 'text',   field: 'Title', placeholder: 'Request name' },
+      { type: 'pick',   field: 'RequestType' },
+      { type: 'pick',   field: 'State' },
+      { type: 'static', html: '—' },
+      { type: 'static', html: '—' },
+      { type: 'date',   field: 'DueDate', actions: true }
+    ]
+  }
+};
+
+function newRowCellHtml(cell) {
+  if (cell.type === 'static') return '<td>' + cell.html + '</td>';
+  if (cell.type === 'text') {
+    return '<td><input type="text" class="new-input edit-input" data-field="' + cell.field +
+      '" placeholder="' + esc(cell.placeholder || '') + '" /></td>';
+  }
+  if (cell.type === 'date') {
+    var actions = cell.actions
+      ? '<div class="new-row-actions">' +
+          '<button class="new-save">Save</button>' +
+          '<button class="new-cancel">Cancel</button>' +
+        '</div>'
+      : '';
+    return '<td><input type="date" class="new-input edit-input" data-field="' + cell.field + '" />' + actions + '</td>';
+  }
+  /* pick — options come from values already present in the loaded data */
+  var opts = (PICK[cell.field] || []).slice();
+  return '<td><select class="new-input edit-input" data-field="' + cell.field + '">' +
+    '<option value="">—</option>' +
+    opts.map(function (o) {
+      return '<option value="' + esc(o) + '">' + esc(cleanLabel(o)) + '</option>';
+    }).join('') +
+    '</select></td>';
 }
-function createNewIssue() {
-  var name = prompt('Enter issue name:');
-  if (!name) return;
-  createEntity('Issue', { Title: name }, 'issue');
+
+function openNewRow(entityType) {
+  var def = NEW_ROW_DEFS[entityType];
+  if (!def) return;
+  var tbody = document.getElementById(def.tbody);
+  if (!tbody) return;
+
+  /* If a draft is already open, just refocus it. */
+  var existing = tbody.querySelector('.new-row');
+  if (existing) { var f = existing.querySelector('.new-input'); if (f) f.focus(); return; }
+
+  /* Drop a "no data" placeholder row if present. */
+  var noData = tbody.querySelector('.no-data');
+  if (noData) { var ndRow = noData.closest('tr'); if (ndRow) ndRow.remove(); }
+
+  var tr = document.createElement('tr');
+  tr.className = 'new-row';
+  tr.setAttribute('data-entity', entityType);
+  tr.innerHTML = '<td><i class="ti ti-plus" style="font-size:13px;color:#8B3A62" aria-hidden="true"></i></td>' +
+    def.cells.map(newRowCellHtml).join('');
+  tbody.insertBefore(tr, tbody.firstChild);
+
+  var saveB = tr.querySelector('.new-save');
+  var cancB = tr.querySelector('.new-cancel');
+  if (saveB) saveB.addEventListener('click', function () { saveNewRow(tr); });
+  if (cancB) cancB.addEventListener('click', function () { cancelNewRow(tr); });
+  tr.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter')  { e.preventDefault(); saveNewRow(tr); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelNewRow(tr); }
+  });
+
+  var title = tr.querySelector('input[data-field="Title"]');
+  if (title) title.focus();
 }
-function createNewRequest() {
-  var name = prompt('Enter request name:');
-  if (!name) return;
-  createEntity('EnhancementRequest', { Title: name }, 'request');
+
+function cancelNewRow(row) {
+  if (row) row.remove();
 }
+
+function saveNewRow(row) {
+  var entityType = row.getAttribute('data-entity');
+  var def = NEW_ROW_DEFS[entityType];
+  var fields = {};
+  row.querySelectorAll('.new-input').forEach(function (inp) {
+    if (inp.value) fields[inp.getAttribute('data-field')] = inp.value;
+  });
+  if (!fields.Title) {
+    alert('Please enter a name.');
+    var t = row.querySelector('input[data-field="Title"]');
+    if (t) t.focus();
+    return;
+  }
+
+  var btn = row.querySelector('.new-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  createEntity(entityType, fields, def.label)
+    .catch(function () { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
+}
+
+function createNewRisk()    { openNewRow('Risk'); }
+function createNewIssue()   { openNewRow('Issue'); }
+function createNewRequest() { openNewRow('EnhancementRequest'); }
 
 /* ---------- 15. Inline editing ---------- */
 function startEdit(cell) {
@@ -672,4 +784,5 @@ setTimeout(function () {
 | Risk Rating editable / stale | Risk Rating is read-only; editing Impact or Likelihood reloads so the recomputed rating shows |
 | Create returned HTTP 500 (wrong `/upsert` body) | Create now uses `PUT /objects/{EntityType}`; update uses `POST /objects/{EntityType}/{id}` — the documented REST endpoints |
 | New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
+| "New …" used an ugly `prompt()` pop-up | Clicking a "New …" button now inserts an inline editable draft row at the top of the table (name + picklists + due date, Save/Cancel, Enter to save / Esc to cancel) |
 ```

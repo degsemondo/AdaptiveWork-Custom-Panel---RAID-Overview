@@ -356,6 +356,52 @@ table.aw-table tbody tr:hover {
   background: #e8e8e8;
 }
 
+/* ── Inline "new item" draft row ── */
+.new-row > td {
+  background: #fafbfc;
+  vertical-align: top;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.new-row .new-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-right: 0;
+}
+.new-row-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+}
+.new-save, .new-cancel {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.new-save {
+  background: #8B3A62;
+  color: #fff;
+}
+.new-save:hover:not(:disabled) {
+  background: #6d2d4c;
+  box-shadow: 0 2px 4px rgba(139, 58, 98, 0.2);
+}
+.new-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.new-cancel {
+  background: #f0f0f0;
+  color: #202124;
+}
+.new-cancel:hover {
+  background: #e8e8e8;
+}
+
 .heatmap {
   padding: 4px 8px;
   text-align: center;
