@@ -4,7 +4,7 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 ## Version
 
-**Current Stable Version: v2.1** (RAID editing & creation release)
+**Current Stable Version: v2.2** (Risks field rework)
 
 ## Features
 
@@ -31,10 +31,10 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 
-1. **HTML Field**: Copy contents of `v2.1/html.md` into the HTML field
-2. **CSS Field**: Copy contents of `v2.1/css.md` into the CSS field
-3. **Script Field**: Copy contents of `v2.1/script.md` into the Script field
-4. **Data Field**: Copy contents of `v2.1/data.md` into the Data field (JSON)
+1. **HTML Field**: Copy contents of `v2.2/html.md` into the HTML field
+2. **CSS Field**: Copy contents of `v2.2/css.md` into the CSS field
+3. **Script Field**: Copy contents of `v2.2/script.md` into the Script field
+4. **Data Field**: Copy contents of `v2.2/data.md` into the Data field (JSON)
 
 ## Technical Details
 
@@ -57,6 +57,11 @@ Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 - `filterTable/filterByStatus()` - Search and filter logic
 
 ## Version History
+
+### v2.2 (2026-06-03)
+- **Reworked Risks tab**: ID, Title, Probability, Impact, Score, Status, Owner, Reporting Level, Impact Date
+- **New**: Reporting Level picklist; picklist option paths resolved via metadata (no prefix guessing)
+- Status uses `State`, Owner uses `Owner`, date column is `C_ImpactDate` (Issues/Requests unchanged)
 
 ### v2.1 (2026-06-03)
 - **New**: Inline "new item" draft row for creating Risks/Issues/Requests (no pop-up)

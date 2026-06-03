@@ -1,5 +1,32 @@
 # Version History
 
+## v2.2 - Risks Field Rework (2026-06-03)
+
+Reworks the Risks tab to a new field specification (Risks only; Issues and
+Requests are unchanged from v2.1).
+
+### What's New
+- **New Risks columns:** ID (`SYSID`), Title, Probability (`C_Likelihood`),
+  Impact (`C_Impact`), Score (`C_RiskRating`, auto-calculated, heat-mapped),
+  Status (`State`), Owner (`Owner`, user type-ahead), Reporting Level
+  (`C_ReportingLevel`), Impact Date (`C_ImpactDate`).
+- **Reporting Level** picklist (EFDC / Portfolio / Project Board / Project Team),
+  editable on existing rows and the new-item draft row.
+- Status now reads/writes the standard `State` field; Owner is the `Owner`
+  reference (was `AssignedTo` in v2.1); the date column is `C_ImpactDate`.
+- **Picklist metadata loader** — fetches real option paths via `describeEntities`
+  so saved picklist values are valid without prefix guessing; falls back to
+  data-derived options if unavailable.
+- Picklist type prefixes follow the *defining* entity, not the field name:
+  Impact/Probability are defined on Risk (`/C_RiskImpact`, `/C_RiskProbability`);
+  Reporting Level is defined on the Case ancestor (`/C_CaseReportingLevel`).
+- Excel export and inline create/edit updated to match the new Risks columns.
+
+### Files
+- `script.md`, `html.md` (CSS and Data unchanged from v2.1)
+
+---
+
 ## v2.1 - RAID Editing & Creation Release (2026-06-03)
 
 Builds on v2.0 with full create/update support, cleaner picklists, and a
