@@ -118,11 +118,11 @@ var PICK_OPTIONS = {
   C_ReportingLevel: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
 /* Fallback "/Type" prefix used only if no existing record reveals it.
-   Picklist TYPE names are "C_Risk" + the field's label, not the field API name
-   (Impact field C_Impact -> /C_RiskImpact; Probability field C_Likelihood ->
-   /C_RiskProbability), so Reporting Level -> /C_RiskReportingLevel. */
+   Picklist TYPE names are "C_" + the DEFINING entity + the field's label
+   (Impact/Probability are defined on Risk -> /C_RiskImpact, /C_RiskProbability;
+   Reporting Level is defined on the Case ancestor -> /C_CaseReportingLevel). */
 var PICK_PREFIX_DEFAULT = {
-  C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability', C_ReportingLevel: '/C_RiskReportingLevel'
+  C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability', C_ReportingLevel: '/C_CaseReportingLevel'
 };
 
 /* Detect the "/Type" prefix for a field from any raw value present in the data. */
