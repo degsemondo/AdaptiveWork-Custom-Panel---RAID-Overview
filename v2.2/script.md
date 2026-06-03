@@ -35,6 +35,9 @@ var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
+/* Authoritative picklist options fetched from AdaptiveWork metadata
+   (field -> [{ raw, label }]). Preferred over guessing a "/Type" prefix. */
+var PICK_META = {};
 var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'State', 'Priority', 'RequestType', 'C_ReportingLevel'];
 function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
@@ -138,6 +141,15 @@ function pickPrefix(field) {
 function pickOptionList(field, current) {
   var out = [], seen = {};
 
+  /* Prefer real option paths from metadata — no prefix guessing needed. */
+  var meta = PICK_META[field];
+  if (meta && meta.length) {
+    var seenM = {};
+    meta.forEach(function (o) { if (o.raw && !seenM[o.raw]) { seenM[o.raw] = 1; out.push(o); } });
+    if (current && !seenM[current]) out.push({ raw: current, label: cleanLabel(current) });
+    return out;
+  }
+
   function add(raw) {
     if (raw === null || raw === undefined || raw === '') return;
     var lbl = cleanLabel(raw);
@@ -169,6 +181,56 @@ function pickOptionsHtml(field, current, includeBlank) {
     return '<option value="' + esc(o.raw) + '"' +
       (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
   }).join('');
+}
+
+/* ---------- 1b. Picklist options from metadata ----------
+   describeEntities returns each field's real option paths, so we don't have to
+   guess the "/Type" prefix (which differs from the field name — e.g. C_Impact's
+   values live under /C_RiskImpact/...). Best-effort: schema-agnostic parsing and
+   graceful fallback to data-derived options if anything is unavailable. */
+function parsePicklistOptions(fd) {
+  /* Find the first array property whose items look like picklist options
+     (either "/Type/Value" strings, or objects carrying a value/id + label). */
+  for (var k in fd) {
+    if (k === 'flags') continue;
+    var v = fd[k];
+    if (!Array.isArray(v) || !v.length) continue;
+    var first = v[0];
+    if (typeof first === 'string') {
+      if (first.charAt(0) === '/') {
+        return v.map(function (s) { return { raw: s, label: cleanLabel(s) }; });
+      }
+      continue;
+    }
+    if (first && typeof first === 'object') {
+      var probe = first.value || first.id || first.Value || first.Id;
+      if (probe) {
+        return v.map(function (o) {
+          var raw = o.value || o.id || o.Value || o.Id || '';
+          return { raw: raw, label: o.label || o.name || o.Label || o.Name || cleanLabel(raw) };
+        });
+      }
+    }
+  }
+  return null;
+}
+function loadPicklistMeta() {
+  var c = getContext();
+  var url = c.base.replace(/\/$/, '') +
+    '/V2.0/services/metadata/describeEntities?typeNames=Risk,Issue,EnhancementRequest';
+  return fetch(url, { headers: { 'Authorization': 'Session ' + c.sid } })
+    .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(function (json) {
+      var descs = json.entityDescriptions || json.descriptions || [];
+      descs.forEach(function (d) {
+        (d.fields || []).forEach(function (fd) {
+          if (!fd || PICK_FIELDS.indexOf(fd.name) === -1) return;
+          if (PICK_META[fd.name]) return;            /* first definition wins */
+          var opts = parsePicklistOptions(fd);
+          if (opts && opts.length) PICK_META[fd.name] = opts;
+        });
+      });
+    });
 }
 
 /* ---------- 2. CZQL fetch wrapper ---------- */
@@ -1033,6 +1095,11 @@ setTimeout(function () {
   showLoading('risks-body', 10);
   showLoading('issues-body', 7);
   showLoading('requests-body', 7);
+
+  /* Load real picklist option paths from metadata (non-blocking). */
+  loadPicklistMeta().catch(function (err) {
+    console.warn('Picklist metadata unavailable, falling back to data-derived options:', err && err.message);
+  });
 
   var qRisks =
     "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, State, Owner.Name, " +
