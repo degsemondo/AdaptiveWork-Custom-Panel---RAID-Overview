@@ -40,13 +40,63 @@ function addPick(field, raw) {
   if (PICK[field].indexOf(raw) === -1) PICK[field].push(raw);
 }
 
-/* User reference fields render as a dropdown of system users.
-   USERS = [{ id: '/User/..', name: '..' }]; USER_NAME maps id -> name. */
-var USERS = [];
+/* User reference fields render as a type-ahead (there can be many users, so we
+   search server-side as you type rather than bulk-loading everyone).
+   USER_NAME maps a known /User/.. id -> display name (for showing the cell). */
 var USER_NAME = {};
 var USER_FIELDS = ['AssignedTo'];
 function isUserField(f) { return USER_FIELDS.indexOf(f) > -1; }
 function rememberUser(id, name) { if (id) USER_NAME[id] = name || USER_NAME[id] || cleanLabel(id); }
+
+/* Search system users by (partial) name. Returns [{ id, name }] (capped). */
+function searchUsers(term) {
+  var c = getContext();
+  var safe = String(term).trim().replace(/'/g, "''");   /* escape single quotes */
+  var q = "SELECT Name FROM User WHERE Name LIKE '%" + safe + "%'";
+  return czql(c.base, c.sid, q).then(function (rows) {
+    return rows.map(function (u) { return { id: u.id, name: u.Name || cleanLabel(u.id) }; })
+               .sort(function (a, b) { return a.name.localeCompare(b.name); })
+               .slice(0, 25);
+  });
+}
+
+/* Wire type-ahead behaviour onto a text input + its sibling suggestions menu.
+   The chosen user's id is stored on the input as data-user-id (read on save). */
+function attachUserTypeahead(input, menu) {
+  var timer = null;
+  function close() { menu.style.display = 'none'; menu.innerHTML = ''; }
+  function pick(item) {
+    input.value = item.getAttribute('data-name');
+    input.setAttribute('data-user-id', item.getAttribute('data-id'));
+    rememberUser(item.getAttribute('data-id'), item.getAttribute('data-name'));
+    close();
+  }
+  function render(list) {
+    if (!list.length) { menu.innerHTML = '<div class="ta-empty">No matches</div>'; menu.style.display = 'block'; return; }
+    menu.innerHTML = list.map(function (u) {
+      return '<div class="ta-item" data-id="' + esc(u.id) + '" data-name="' + esc(u.name) + '">' + esc(u.name) + '</div>';
+    }).join('');
+    menu.style.display = 'block';
+  }
+  input.addEventListener('input', function () {
+    input.setAttribute('data-user-id', '');   /* typing invalidates any prior pick */
+    var term = input.value.trim();
+    if (timer) clearTimeout(timer);
+    if (term.length < 2) { close(); return; }
+    timer = setTimeout(function () { searchUsers(term).then(render).catch(close); }, 250);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && menu.style.display === 'block') {
+      var first = menu.querySelector('.ta-item');
+      if (first) { e.preventDefault(); e.stopPropagation(); pick(first); }
+    }
+  });
+  menu.addEventListener('mousedown', function (e) {
+    var item = e.target.closest('.ta-item');
+    if (item) { e.preventDefault(); pick(item); }
+  });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+}
 
 /* Canonical, fully-ordered option labels for the calculated-risk picklists.
    These always appear in the dropdowns (Impact / Probability) in this order,
@@ -77,18 +127,6 @@ function pickPrefix(field) {
    - `current` (the row's raw value) is always included so it stays selectable. */
 function pickOptionList(field, current) {
   var out = [], seen = {};
-
-  /* User reference field — options are the system users (value = id, label = name). */
-  if (isUserField(field)) {
-    function addU(id, name) {
-      if (!id || seen[id]) return;
-      seen[id] = true;
-      out.push({ raw: id, label: name || USER_NAME[id] || cleanLabel(id) });
-    }
-    USERS.forEach(function (u) { addU(u.id, u.name); });
-    addU(current, USER_NAME[current]);
-    return out;
-  }
 
   function add(raw) {
     if (raw === null || raw === undefined || raw === '') return;
@@ -544,7 +582,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'C_Likelihood' },
       { type: 'static', html: '—' },
       { type: 'pick',   field: 'State' },
-      { type: 'pick',   field: 'AssignedTo' },
+      { type: 'user',   field: 'AssignedTo' },
       { type: 'date',   field: 'DueDate', actions: true }
     ]
   },
@@ -554,7 +592,7 @@ var NEW_ROW_DEFS = {
       { type: 'text',   field: 'Title', placeholder: 'Issue name' },
       { type: 'pick',   field: 'Priority' },
       { type: 'pick',   field: 'State' },
-      { type: 'pick',   field: 'AssignedTo' },
+      { type: 'user',   field: 'AssignedTo' },
       { type: 'static', html: '—' },
       { type: 'date',   field: 'DueDate', actions: true }
     ]
@@ -587,6 +625,11 @@ function newRowCellHtml(cell) {
       : '';
     return '<td><input type="date" class="new-input edit-input" data-field="' + cell.field + '" />' + actions + '</td>';
   }
+  if (cell.type === 'user') {
+    return '<td class="ta-cell"><input type="text" class="new-input ta-input" autocomplete="off"' +
+      ' data-field="' + cell.field + '" data-user-id="" placeholder="Type a name…" />' +
+      '<div class="ta-menu" style="display:none"></div></td>';
+  }
   /* pick — canonical list for Impact/Probability, else values present in data */
   return '<td><select class="new-input edit-input" data-field="' + cell.field + '">' +
     pickOptionsHtml(cell.field, '', true) +
@@ -614,6 +657,11 @@ function openNewRow(entityType) {
     def.cells.map(newRowCellHtml).join('');
   tbody.insertBefore(tr, tbody.firstChild);
 
+  tr.querySelectorAll('.ta-input').forEach(function (inp) {
+    var menu = inp.parentNode.querySelector('.ta-menu');
+    if (menu) attachUserTypeahead(inp, menu);
+  });
+
   var saveB = tr.querySelector('.new-save');
   var cancB = tr.querySelector('.new-cancel');
   if (saveB) saveB.addEventListener('click', function () { saveNewRow(tr); });
@@ -636,7 +684,9 @@ function saveNewRow(row) {
   var def = NEW_ROW_DEFS[entityType];
   var fields = {};
   row.querySelectorAll('.new-input').forEach(function (inp) {
-    if (inp.value) fields[inp.getAttribute('data-field')] = inp.value;
+    var f = inp.getAttribute('data-field');
+    var v = isUserField(f) ? (inp.getAttribute('data-user-id') || '') : inp.value;
+    if (v) fields[f] = v;
   });
   if (!fields.Title) {
     alert('Please enter a name.');
@@ -663,8 +713,13 @@ function startEdit(cell) {
   var value = cell.getAttribute('data-value') || '';
   var inputHtml;
 
-  if (isPick(field) || isUserField(field)) {
-    inputHtml = '<select class="edit-input">' + pickOptionsHtml(field, value, isUserField(field)) + '</select>';
+  if (isUserField(field)) {
+    var curName = value ? (USER_NAME[value] || cleanLabel(value)) : '';
+    inputHtml = '<input type="text" class="edit-input ta-input" autocomplete="off"' +
+      ' data-user-id="' + esc(value) + '" value="' + esc(curName) + '" placeholder="Type a name…" />' +
+      '<div class="ta-menu" style="display:none"></div>';
+  } else if (isPick(field)) {
+    inputHtml = '<select class="edit-input">' + pickOptionsHtml(field, value, false) + '</select>';
   } else if (field === 'DueDate') {
     inputHtml = '<input type="date" class="edit-input" value="' + (value ? value.split('T')[0] : '') + '" />';
   } else {
@@ -675,8 +730,14 @@ function startEdit(cell) {
   cell.innerHTML = inputHtml +
     '<button class="edit-save">Save</button>' +
     '<button class="edit-cancel">Cancel</button>';
-  var inp = cell.querySelector('.edit-input');
-  if (inp) inp.focus();
+  var taInput = cell.querySelector('.ta-input');
+  if (taInput) {
+    attachUserTypeahead(taInput, cell.querySelector('.ta-menu'));
+    taInput.focus();
+  } else {
+    var inp = cell.querySelector('.edit-input');
+    if (inp) inp.focus();
+  }
 }
 
 function cancelEdit(cell) {
@@ -687,10 +748,16 @@ function cancelEdit(cell) {
 function saveEdit(cell) {
   var input = cell.querySelector('.edit-input');
   if (!input) return;
-  var newValue = input.value;
   var field = cell.getAttribute('data-field');
   var id = cell.getAttribute('data-id');
-  if (!newValue) { alert('Field cannot be empty'); return; }
+  var newValue;
+  if (isUserField(field)) {
+    newValue = input.getAttribute('data-user-id') || '';
+    if (!newValue) { alert('Please pick a user from the list.'); return; }
+  } else {
+    newValue = input.value;
+    if (!newValue) { alert('Field cannot be empty'); return; }
+  }
 
   var btn = cell.querySelector('.edit-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
@@ -813,24 +880,16 @@ setTimeout(function () {
   var qRequests =
     "SELECT Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
     "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
-  /* System users, for the Owner dropdown. */
-  var qUsers = "SELECT Name FROM User";
 
   Promise.all([
     czql(c.base, c.sid, qRisks),
     czql(c.base, c.sid, qIssues),
-    czql(c.base, c.sid, qRequests),
-    czql(c.base, c.sid, qUsers).catch(function () { return []; })   /* non-fatal */
+    czql(c.base, c.sid, qRequests)
   ])
   .then(function (results) {
     var risks    = results[0].map(toRisk);
     var issues   = results[1].map(toIssue);
     var requests = results[2].map(toRequest);
-
-    USERS = (results[3] || []).map(function (u) {
-      return { id: u.id, name: u.Name || cleanLabel(u.id) };
-    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
-    USERS.forEach(function (u) { rememberUser(u.id, u.name); });
 
     var caseIds = []
       .concat(results[0].map(function (e) { return e.id; }))
@@ -874,5 +933,5 @@ setTimeout(function () {
 | New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
 | "New …" used an ugly `prompt()` pop-up | Clicking a "New …" button now inserts an inline editable draft row at the top of the table (name + picklists + due date, Save/Cancel, Enter to save / Esc to cancel) |
 | Impact / Probability dropdowns only listed values already in use | Canonical, fully-ordered option lists for `C_Impact` (1 - Minor … 6 - Severe) and `C_Likelihood` (1 - Unlikely … 6 - Very Likely) always show; raw `/Type/Value` path is reused from data or rebuilt from the detected prefix. "Likelihood" column header renamed to "Probability" |
-| Owner was read-only text | Owner (`AssignedTo`) is now an editable dropdown of system users (`SELECT Name FROM User`), on both existing rows and the new-item draft row. Sends the `/User/…` id; falls back gracefully if the user query fails |
+| Owner was read-only text | Owner (`AssignedTo`) is now an editable **type-ahead** of system users — searches server-side (`User WHERE Name LIKE '%…%'`, debounced, 2+ chars) instead of bulk-loading everyone. Works on existing rows and the new-item draft row; sends the `/User/…` id |
 ```

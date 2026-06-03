@@ -402,6 +402,37 @@ table.aw-table tbody tr:hover {
   background: #e8e8e8;
 }
 
+/* ── User type-ahead ── */
+.ta-cell { position: relative; }
+.ta-input { min-width: 120px; }
+.ta-menu {
+  position: absolute;
+  z-index: 50;
+  left: 4px;
+  top: 100%;
+  min-width: 160px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.ta-item {
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ta-item:hover {
+  background: rgba(139, 58, 98, 0.08);
+}
+.ta-empty {
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #80868b;
+}
+
 .heatmap {
   padding: 4px 8px;
   text-align: center;
