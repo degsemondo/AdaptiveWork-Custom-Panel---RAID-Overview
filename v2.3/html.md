@@ -38,7 +38,7 @@
       <button class="aw-tab" role="tab" aria-selected="false"
               aria-controls="pane-requests" data-tab="requests">
         <i class="ti ti-clipboard-list" style="font-size:14px" aria-hidden="true"></i>
-        Requests
+        Change Requests
         <span class="aw-badge badge-request" id="badge-requests">0</span>
       </button>
     </div>

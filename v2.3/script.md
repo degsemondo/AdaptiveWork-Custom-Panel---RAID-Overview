@@ -514,7 +514,7 @@ function renderIssues(issues, actionMap) {
 function renderRequests(requests, actionMap) {
   var tbody = document.getElementById('requests-body');
   if (!requests.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No requests found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No change requests found for this project.</div></td></tr>';
     document.getElementById('badge-requests').textContent = '0';
     return;
   }
@@ -879,7 +879,7 @@ function filterByStatus(tbodyId, val) {
 var TAB_CFG = {
   risks:    { tbody: 'risks-body',    placeholder: 'Search risks…',    newLabel: 'New risk',    create: createNewRisk,    statuses: ['New', 'Closed', 'Realised'] },
   issues:   { tbody: 'issues-body',   placeholder: 'Search issues…',   newLabel: 'New issue',   create: createNewIssue,   statuses: ['Open', 'In progress', 'Resolved'] },
-  requests: { tbody: 'requests-body', placeholder: 'Search requests…', newLabel: 'New request', create: createNewRequest, statuses: ['New', 'Pending', 'Approved', 'Rejected'] }
+  requests: { tbody: 'requests-body', placeholder: 'Search change requests…', newLabel: 'New change request', create: createNewRequest, statuses: ['New', 'Pending', 'Approved', 'Rejected'] }
 };
 var ACTIVE_TAB = 'risks';
 
@@ -1083,7 +1083,7 @@ function exportToExcel() {
     buildSheetXml('Issues',
       ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
       exportRowsIssues(), null) +
-    buildSheetXml('Requests',
+    buildSheetXml('Change Requests',
       ['Request name', 'Type', 'Status', 'Requestor', 'Submitted', 'Decision by'],
       exportRowsRequests(), null) +
     '</Workbook>';
@@ -1140,12 +1140,16 @@ setTimeout(function () {
   .then(function (results) {
     var risks    = results[0].map(toRisk);
     var issues   = results[1].map(toIssue);
-    var requests = results[2].map(toRequest);
+    /* Requests tab shows Change Requests only (RequestType = 'Change Request'). */
+    var reqRows  = results[2].filter(function (e) {
+      return cleanLabel(pickRaw(e.RequestType) || pickRaw(e.Type)).toLowerCase() === 'change request';
+    });
+    var requests = reqRows.map(toRequest);
 
     var caseIds = []
       .concat(results[0].map(function (e) { return e.id; }))
       .concat(results[1].map(function (e) { return e.id; }))
-      .concat(results[2].map(function (e) { return e.id; }));
+      .concat(reqRows.map(function (e) { return e.id; }));
 
     if (!caseIds.length) {
       renderAll(risks, issues, requests, {});
