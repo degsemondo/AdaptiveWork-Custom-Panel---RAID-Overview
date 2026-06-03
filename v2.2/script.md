@@ -35,11 +35,11 @@ var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
-var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'State', 'Status', 'Priority', 'RequestType', 'C_ReportingLevel'];
+var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'State', 'Priority', 'RequestType', 'C_ReportingLevel'];
 function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
-function isPillField(f) { return f === 'State' || f === 'Status' || f === 'Priority'; }
+function isPillField(f) { return f === 'State' || f === 'Priority'; }
 function isDateField(f) { return f === 'DueDate' || f === 'C_ImpactDate'; }
 function addPick(field, raw) {
   if (!raw) return;
@@ -228,7 +228,7 @@ function toRisk(e) {
   var impRaw  = pickRaw(e.C_Impact);
   var probRaw = pickRaw(e.C_Likelihood);
   var rateRaw = pickRaw(e.C_RiskRating);
-  var stRaw   = pickRaw(e.Status);
+  var stRaw   = pickRaw(e.State);
   var rlRaw   = pickRaw(e.C_ReportingLevel);
   return {
     id:                (e.id || '').replace(/\//g, '-'),
@@ -413,7 +413,7 @@ function renderRisks(risks, actionMap) {
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell('C_Impact',         r.rawId, r.impactRaw,         esc(r.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
-      editCell('Status',           r.rawId, r.statusRaw,         pill(r.status)) +
+      editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
       editCell('C_ReportingLevel', r.rawId, r.reportingLevelRaw, esc(r.reportingLevel)) +
       editCell('C_ImpactDate',     r.rawId, r.impactDate || '',  '<span class="action-due ' + dueCls(r.impactDate) + '">' + fmtDate(r.impactDate) + '</span>') +
@@ -476,7 +476,7 @@ function renderAll(risks, issues, requests, actionMap) {
   risks.forEach(function (r) {
     addPick('C_Impact', r.impactRaw);
     addPick('C_Likelihood', r.probabilityRaw);
-    addPick('Status', r.statusRaw);
+    addPick('State', r.statusRaw);
     addPick('C_ReportingLevel', r.reportingLevelRaw);
     rememberUser(r.ownerRaw, r.owner);
   });
@@ -599,7 +599,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
       { type: 'pick',   field: 'C_Impact' },
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
-      { type: 'pick',   field: 'Status' },
+      { type: 'pick',   field: 'State' },
       { type: 'user',   field: 'Owner' },
       { type: 'pick',   field: 'C_ReportingLevel' },
       { type: 'date',   field: 'C_ImpactDate', actions: true }
@@ -1035,7 +1035,7 @@ setTimeout(function () {
   showLoading('requests-body', 7);
 
   var qRisks =
-    "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, Status, Owner.Name, " +
+    "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, State, Owner.Name, " +
     "C_ReportingLevel, C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
     "SELECT Title, Priority, State, AssignedTo.Name, CreatedOn, DueDate " +
