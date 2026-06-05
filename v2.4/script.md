@@ -445,8 +445,8 @@ function actionInnerHtml(name, ownerName, stateRaw, dueIso) {
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
     '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' +
     '<span class="action-tools">' +
-      '<button class="act-edit" title="Edit action" aria-label="Edit action"><i class="ti ti-pencil" aria-hidden="true"></i></button>' +
-      '<button class="act-del" title="Delete action" aria-label="Delete action"><i class="ti ti-trash" aria-hidden="true"></i></button>' +
+      '<button class="act-edit" title="Edit action" aria-label="Edit action">Edit</button>' +
+      '<button class="act-del" title="Delete action" aria-label="Delete action">Delete</button>' +
     '</span>';
 }
 /* One action row, carrying its data on data-* attributes for in-place editing. */
@@ -479,7 +479,7 @@ function actionFormHtml(a) {
 function actionsBlock(actions, parentId) {
   var head = '<div class="actions-head">' +
     '<span class="actions-label">Associated actions</span>' +
-    '<button class="act-add" aria-label="Add action"><i class="ti ti-plus" aria-hidden="true"></i> Add</button>' +
+    '<button class="act-add" aria-label="Add action">+ Add action</button>' +
     '</div>';
   var body = (actions && actions.length)
     ? actions.map(actionItemHtml).join('')
