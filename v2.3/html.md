@@ -60,6 +60,12 @@
       </button>
     </div>
 
+    <input type="file" id="aw-import-file" accept=".xls,.xml" style="display:none" />
+    <button class="aw-btn" id="btn-import" aria-label="Import from Excel">
+      <i class="ti ti-file-import" style="font-size:14px" aria-hidden="true"></i>
+      Import
+    </button>
+
     <button class="aw-btn" id="btn-export" aria-label="Export all tabs to Excel">
       <i class="ti ti-file-spreadsheet" style="font-size:14px" aria-hidden="true"></i>
       Export
@@ -106,6 +112,7 @@
           <thead>
             <tr>
               <th style="width:28px"></th>
+              <th>ID</th>
               <th>Issue name</th>
               <th>Priority</th>
               <th>Status</th>
@@ -127,10 +134,11 @@
     <div class="aw-tab-pane" id="pane-requests" role="tabpanel">
 
       <div class="aw-table-wrap">
-        <table class="aw-table" role="grid" aria-label="Requests">
+        <table class="aw-table" role="grid" aria-label="Change Requests">
           <thead>
             <tr>
               <th style="width:28px"></th>
+              <th>ID</th>
               <th>Request name</th>
               <th>Status</th>
               <th>Requestor</th>

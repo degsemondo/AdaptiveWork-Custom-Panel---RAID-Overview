@@ -316,6 +316,7 @@ function toIssue(e) {
   var stRaw = pickRaw(e.State);
   return {
     id:          (e.id || '').replace(/\//g, '-'),
+    sysId:       e.SYSID || '',
     name:        e.Title || '(unnamed)',
     priorityRaw: prRaw, priority: cleanLabel(prRaw) || 'Medium',
     statusRaw:   stRaw, status:   cleanLabel(stRaw) || 'Open',
@@ -332,6 +333,7 @@ function toRequest(e) {
   var stRaw = pickRaw(e.State);
   return {
     id:         (e.id || '').replace(/\//g, '-'),
+    sysId:      e.SYSID || '',
     name:       e.Title || '(unnamed)',
     typeRaw:    tyRaw, type:   cleanLabel(tyRaw) || 'Change request',
     statusRaw:  stRaw, status: cleanLabel(stRaw) || 'New',
@@ -491,7 +493,7 @@ function renderRisks(risks, actionMap) {
 function renderIssues(issues, actionMap) {
   var tbody = document.getElementById('issues-body');
   if (!issues.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No issues found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data">No issues found for this project.</div></td></tr>';
     document.getElementById('badge-issues').textContent = '0';
     return;
   }
@@ -499,6 +501,7 @@ function renderIssues(issues, actionMap) {
     var actions = actionMap[issue.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
+      '<td>' + esc(issue.sysId) + '</td>' +
       editCell('Title',    issue.rawId, issue.name,        esc(issue.name)) +
       editCell('Priority', issue.rawId, issue.priorityRaw, pill(issue.priority)) +
       editCell('State',    issue.rawId, issue.statusRaw,   pill(issue.status)) +
@@ -506,7 +509,7 @@ function renderIssues(issues, actionMap) {
       '<td>' + fmtDate(issue.raised) + '</td>' +
       editCell('DueDate',  issue.rawId, issue.dueDate || '', '<span class="action-due ' + dueCls(issue.dueDate) + '">' + fmtDate(issue.dueDate) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="7">' + actionsBlock(actions) + '</td></tr>';
+      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="8">' + actionsBlock(actions) + '</td></tr>';
   }).join('');
   document.getElementById('badge-issues').textContent = issues.length;
 }
@@ -514,7 +517,7 @@ function renderIssues(issues, actionMap) {
 function renderRequests(requests, actionMap) {
   var tbody = document.getElementById('requests-body');
   if (!requests.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="no-data">No change requests found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No change requests found for this project.</div></td></tr>';
     document.getElementById('badge-requests').textContent = '0';
     return;
   }
@@ -522,13 +525,14 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
+      '<td>' + esc(req.sysId) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
       '<td>' + fmtDate(req.submitted) + '</td>' +
       editCell('DueDate',     req.rawId, req.decisionBy || '', '<span class="action-due ' + dueCls(req.decisionBy) + '">' + fmtDate(req.decisionBy) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="6">' + actionsBlock(actions) + '</td></tr>';
+      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="7">' + actionsBlock(actions) + '</td></tr>';
   }).join('');
   document.getElementById('badge-requests').textContent = requests.length;
 }
@@ -671,6 +675,7 @@ var NEW_ROW_DEFS = {
   Issue: {
     tbody: 'issues-body', label: 'issue',
     cells: [
+      { type: 'static', html: '—' },                       /* ID (system-assigned) */
       { type: 'text',   field: 'Title', placeholder: 'Issue name' },
       { type: 'pick',   field: 'Priority' },
       { type: 'pick',   field: 'State' },
@@ -682,6 +687,7 @@ var NEW_ROW_DEFS = {
   EnhancementRequest: {
     tbody: 'requests-body', label: 'change request',
     cells: [
+      { type: 'static', html: '—' },                       /* ID (system-assigned) */
       { type: 'text',   field: 'Title', placeholder: 'Change request name' },
       { type: 'pick',   field: 'State' },
       { type: 'static', html: '—' },
@@ -971,6 +977,15 @@ function initUI() {
   var ex = document.getElementById('btn-export');
   if (ex) ex.addEventListener('click', exportToExcel);
 
+  var imp = document.getElementById('btn-import');
+  var impFile = document.getElementById('aw-import-file');
+  if (imp && impFile) {
+    imp.addEventListener('click', function () { impFile.value = ''; impFile.click(); });
+    impFile.addEventListener('change', function () {
+      if (impFile.files && impFile.files[0]) importFromExcel(impFile.files[0]);
+    });
+  }
+
   setActiveTab('risks');   /* initialise the toolbar for the default tab */
 }
 
@@ -1000,18 +1015,18 @@ function exportRowsRisks() {
 function exportRowsIssues() {
   var rows = [], kinds = [];
   DATA.issues.forEach(function (i) {
-    rows.push([i.name, i.priority, i.status, i.owner, exportDateCell(i.raised), exportDateCell(i.dueDate)]);
+    rows.push([i.sysId, i.name, i.priority, i.status, i.owner, exportDateCell(i.raised), exportDateCell(i.dueDate)]);
     kinds.push('record');
-    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
+    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 7)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
 function exportRowsRequests() {
   var rows = [], kinds = [];
   DATA.requests.forEach(function (q) {
-    rows.push([q.name, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
+    rows.push([q.sysId, q.name, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
     kinds.push('record');
-    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 5)); kinds.push('action'); });
+    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
@@ -1097,10 +1112,10 @@ function exportToExcel() {
       ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date'],
       exportRowsRisks(), 4) +
     buildSheetXml('Issues',
-      ['Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
+      ['ID', 'Issue name', 'Priority', 'Status', 'Owner', 'Raised', 'Due date'],
       exportRowsIssues(), null) +
     buildSheetXml('Change Requests',
-      ['Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
+      ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
       exportRowsRequests(), null) +
     '</Workbook>';
 
@@ -1115,6 +1130,226 @@ function exportToExcel() {
   setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
 
+/* ---------- 17c. Import from Excel ----------
+   Reads a workbook previously produced by Export (SpreadsheetML 2003 XML),
+   matches rows back to records by the ID (SYSID) column, and updates changed
+   fields / creates rows with no ID. Read-only columns (ID, Score, Requestor,
+   Submitted, Raised) are ignored; empty cells are left untouched (never clears).
+   Owner is matched by name, picklists by label, dates by parsing the shown date. */
+var IMPORT_CFG = {
+  'Risks': {
+    entityType: 'Risk', list: 'risks',
+    fields: [
+      { hdr: 'Risk name',       api: 'Title',            kind: 'text' },
+      { hdr: 'Probability',     api: 'C_Likelihood',     kind: 'pick' },
+      { hdr: 'Impact',          api: 'C_Impact',         kind: 'pick' },
+      { hdr: 'Status',          api: 'State',            kind: 'pick' },
+      { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
+      { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
+      { hdr: 'Impact Date',     api: 'C_ImpactDate',     kind: 'date' }
+    ]
+  },
+  'Issues': {
+    entityType: 'Issue', list: 'issues',
+    fields: [
+      { hdr: 'Issue name', api: 'Title',      kind: 'text' },
+      { hdr: 'Priority',   api: 'Priority',   kind: 'pick' },
+      { hdr: 'Status',     api: 'State',      kind: 'pick' },
+      { hdr: 'Owner',      api: 'AssignedTo', kind: 'user' },
+      { hdr: 'Due date',   api: 'DueDate',    kind: 'date' }
+    ]
+  },
+  'Change Requests': {
+    entityType: 'EnhancementRequest', list: 'requests',
+    fields: [
+      { hdr: 'Request name', api: 'Title',   kind: 'text' },
+      { hdr: 'Status',       api: 'State',   kind: 'pick' },
+      { hdr: 'Decision by',  api: 'DueDate', kind: 'date' }
+    ],
+    createExtra: function (fields) { var rt = changeRequestTypeRaw(); if (rt) fields.RequestType = rt; }
+  }
+};
+
+/* Current raw value of an API field on a loaded record (for change detection). */
+function recCurrent(entityType, rec, api) {
+  if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
+  if (entityType === 'Risk') {
+    if (api === 'C_Likelihood')     return rec.probabilityRaw;
+    if (api === 'C_Impact')         return rec.impactRaw;
+    if (api === 'State')            return rec.statusRaw;
+    if (api === 'Owner')            return rec.ownerRaw;
+    if (api === 'C_ReportingLevel') return rec.reportingLevelRaw;
+    if (api === 'C_ImpactDate')     return rec.impactDate || '';
+  } else if (entityType === 'Issue') {
+    if (api === 'Priority')   return rec.priorityRaw;
+    if (api === 'State')      return rec.statusRaw;
+    if (api === 'AssignedTo') return rec.ownerRaw;
+    if (api === 'DueDate')    return rec.dueDate || '';
+  } else if (entityType === 'EnhancementRequest') {
+    if (api === 'State')   return rec.statusRaw;
+    if (api === 'DueDate') return rec.decisionBy || '';
+  }
+  return '';
+}
+
+/* Convert a displayed cell value back to the raw API value.
+   Resolves to: a value to send, '' (empty -> skip, never clears), or null (could
+   not resolve -> skip + warn). Returns a Promise (user lookup may be async). */
+function importConvert(field, kind, display) {
+  display = (display == null ? '' : String(display)).trim();
+  if (kind === 'text') return Promise.resolve(display);
+  if (!display || display === '—') return Promise.resolve('');
+  if (kind === 'date') {
+    var d = new Date(display);
+    return Promise.resolve(isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10));
+  }
+  if (kind === 'pick') {
+    var opts = pickOptionList(field, '');
+    for (var i = 0; i < opts.length; i++) {
+      if (String(opts[i].label).toLowerCase() === display.toLowerCase()) return Promise.resolve(opts[i].raw);
+    }
+    return Promise.resolve(null);
+  }
+  if (kind === 'user') {
+    for (var id in USER_NAME) {
+      if (USER_NAME[id] && USER_NAME[id].toLowerCase() === display.toLowerCase()) return Promise.resolve(id);
+    }
+    return searchUsers(display).then(function (list) {
+      for (var j = 0; j < list.length; j++) {
+        if (list[j].name.toLowerCase() === display.toLowerCase()) { rememberUser(list[j].id, list[j].name); return list[j].id; }
+      }
+      return null;
+    }).catch(function () { return null; });
+  }
+  return Promise.resolve(display);
+}
+
+/* Parse a SpreadsheetML workbook into { sheetName: [ [cell,...], ... ] }. */
+function parseWorkbook(text) {
+  var doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('not a valid Excel XML workbook');
+  function wsName(ws) {
+    var a = ws.attributes;
+    for (var i = 0; i < a.length; i++) { if (a[i].name === 'ss:Name' || a[i].localName === 'Name') return a[i].value; }
+    return '';
+  }
+  var out = {}, sheets = doc.getElementsByTagName('Worksheet');
+  for (var s = 0; s < sheets.length; s++) {
+    var rowsOut = [], rowEls = sheets[s].getElementsByTagName('Row');
+    for (var r = 0; r < rowEls.length; r++) {
+      var cells = rowEls[r].getElementsByTagName('Cell'), vals = [];
+      for (var c = 0; c < cells.length; c++) {
+        var data = cells[c].getElementsByTagName('Data')[0];
+        vals.push(data ? (data.textContent || '') : '');
+      }
+      rowsOut.push(vals);
+    }
+    out[wsName(sheets[s])] = rowsOut;
+  }
+  return out;
+}
+
+function importFromExcel(file) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var book;
+    try { book = parseWorkbook(String(reader.result)); }
+    catch (e) { alert('Could not read the file: ' + e.message); return; }
+    processImport(book);
+  };
+  reader.onerror = function () { alert('Could not read the file.'); };
+  reader.readAsText(file);
+}
+
+function processImport(book) {
+  var ops = [], warnings = [], pending = [];
+
+  Object.keys(IMPORT_CFG).forEach(function (sheetName) {
+    var cfg = IMPORT_CFG[sheetName];
+    var rows = book[sheetName];
+    if (!rows || rows.length < 2) return;
+
+    var colOf = {};
+    rows[0].forEach(function (h, idx) { colOf[String(h).trim()] = idx; });
+    var idCol = colOf.ID;
+
+    var bySys = {};
+    (DATA[cfg.list] || []).forEach(function (rec) { if (rec.sysId) bySys[String(rec.sysId)] = rec; });
+
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if ((row[0] || '') === '' && (row[1] || '') === 'Action') continue;   /* action sub-row */
+
+      (function (row, rowNum) {
+        var idVal = (idCol != null) ? String(row[idCol] || '').trim() : '';
+        var rec = idVal ? bySys[idVal] : null;
+        var proms = cfg.fields.map(function (f) {
+          var ci = colOf[f.hdr];
+          var disp = (ci != null) ? row[ci] : '';
+          return importConvert(f.api, f.kind, disp).then(function (val) { return { f: f, val: val, disp: disp }; });
+        });
+        pending.push(Promise.all(proms).then(function (resolved) {
+          var fields = {};
+          resolved.forEach(function (rv) {
+            if (rv.val === null) { warnings.push(sheetName + ' row ' + rowNum + ': could not resolve "' + rv.disp + '" for ' + rv.f.hdr); return; }
+            if (rv.val === '') return;                       /* empty -> leave untouched */
+            if (rec) {
+              var cur = recCurrent(cfg.entityType, rec, rv.f.api);
+              var curCmp = (rv.f.kind === 'date') ? String(cur).slice(0, 10) : cur;
+              if (String(curCmp) === String(rv.val)) return;  /* unchanged */
+            }
+            fields[rv.f.api] = rv.val;
+          });
+          if (rec) {
+            if (Object.keys(fields).length) ops.push({ kind: 'update', rawId: rec.rawId, fields: fields });
+          } else if (idVal) {
+            warnings.push(sheetName + ' row ' + rowNum + ': ID "' + idVal + '" not found — skipped.');
+          } else if (fields.Title) {
+            if (cfg.createExtra) cfg.createExtra(fields);
+            ops.push({ kind: 'create', entityType: cfg.entityType, fields: fields });
+          }
+        }));
+      })(row, r + 1);
+    }
+  });
+
+  Promise.all(pending).then(function () {
+    var upd = ops.filter(function (o) { return o.kind === 'update'; }).length;
+    var cre = ops.filter(function (o) { return o.kind === 'create'; }).length;
+    if (!upd && !cre) {
+      alert('No changes to import.' + (warnings.length ? '\n\nNotes:\n' + warnings.slice(0, 15).join('\n') : ''));
+      return;
+    }
+    var msg = 'Import will update ' + upd + ' and create ' + cre + ' record(s).';
+    if (warnings.length) msg += '\n\nSkipped / warnings (' + warnings.length + '):\n' + warnings.slice(0, 12).join('\n');
+    msg += '\n\nProceed?';
+    if (window.confirm(msg)) executeImport(ops);
+  });
+}
+
+function executeImport(ops) {
+  var c;
+  try { c = getContext(); } catch (e) { alert('Import failed: ' + e.message); return; }
+  var jobs = ops.map(function (op) {
+    var p;
+    if (op.kind === 'update') {
+      p = updateObject(c.base, c.sid, op.rawId, op.fields);
+    } else {
+      op.fields.PlannedFor = c.projId;
+      p = createObject(c.base, c.sid, op.entityType, op.fields).then(function (res) {
+        var caseId = res && res.id;
+        return caseId ? linkToProject(c.base, c.sid, caseId, c.projId) : null;
+      });
+    }
+    return p.then(function () { return true; }, function () { return false; });
+  });
+  Promise.all(jobs).then(function (results) {
+    var failed = results.filter(function (ok) { return !ok; }).length;
+    if (failed) alert(failed + ' of ' + results.length + ' operation(s) failed; the rest were applied.');
+    location.reload();
+  });
+}
+
 /* ---------- 18. Bootstrap ---------- */
 setTimeout(function () {
   initUI();
@@ -1124,14 +1359,14 @@ setTimeout(function () {
     c = getContext();
   } catch (e) {
     showError('risks-body', 10, e.message);
-    showError('issues-body', 7, e.message);
-    showError('requests-body', 6, e.message);
+    showError('issues-body', 8, e.message);
+    showError('requests-body', 7, e.message);
     return;
   }
 
   showLoading('risks-body', 10);
-  showLoading('issues-body', 7);
-  showLoading('requests-body', 6);
+  showLoading('issues-body', 8);
+  showLoading('requests-body', 7);
 
   /* Load real picklist option paths from metadata (non-blocking). */
   loadPicklistMeta().catch(function (err) {
@@ -1142,10 +1377,10 @@ setTimeout(function () {
     "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, State, Owner.Name, " +
     "C_ReportingLevel, C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
-    "SELECT Title, Priority, State, AssignedTo.Name, CreatedOn, DueDate " +
+    "SELECT SYSID, Title, Priority, State, AssignedTo.Name, CreatedOn, DueDate " +
     "FROM Issue WHERE PlannedFor = '" + c.projId + "'";
   var qRequests =
-    "SELECT Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
+    "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
     "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
 
   Promise.all([
@@ -1186,8 +1421,8 @@ setTimeout(function () {
     console.error('AdaptiveWork panel fetch error:', err);
     var msg = 'Failed to load data: ' + err.message;
     showError('risks-body', 10, msg);
-    showError('issues-body', 7, msg);
-    showError('requests-body', 6, msg);
+    showError('issues-body', 8, msg);
+    showError('requests-body', 7, msg);
   });
 }, 100);
 ```
