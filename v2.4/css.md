@@ -303,23 +303,25 @@ table.aw-table tbody tr:hover {
 .action-tools {
   margin-left: auto;
   display: inline-flex;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  gap: 4px;
 }
-.action-item:hover .action-tools { opacity: 1; }
 .act-edit, .act-del {
-  border: none;
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid #dadce0;
+  background: #fff;
   cursor: pointer;
-  color: #5f6368;
-  padding: 2px 4px;
   border-radius: 3px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
-.act-edit:hover { color: #8B3A62; background: rgba(139, 58, 98, 0.08); }
-.act-del:hover  { color: #c2185b; background: #fce4ec; }
+.act-edit { color: #8B3A62; }
+.act-del  { color: #c2185b; }
+.act-edit:hover { background: rgba(139, 58, 98, 0.10); border-color: #8B3A62; }
+.act-del:hover  { background: #fce4ec; border-color: #c2185b; }
 
 .action-edit {
   display: flex;
