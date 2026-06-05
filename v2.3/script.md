@@ -550,7 +550,6 @@ function renderAll(risks, issues, requests, actionMap) {
     addPick('State', i.statusRaw);
   });
   requests.forEach(function (q) {
-    addPick('RequestType', q.typeRaw);
     addPick('State', q.statusRaw);
   });
   renderRisks(risks, actionMap);
@@ -1126,13 +1125,13 @@ setTimeout(function () {
   } catch (e) {
     showError('risks-body', 10, e.message);
     showError('issues-body', 7, e.message);
-    showError('requests-body', 7, e.message);
+    showError('requests-body', 6, e.message);
     return;
   }
 
   showLoading('risks-body', 10);
   showLoading('issues-body', 7);
-  showLoading('requests-body', 7);
+  showLoading('requests-body', 6);
 
   /* Load real picklist option paths from metadata (non-blocking). */
   loadPicklistMeta().catch(function (err) {
@@ -1188,7 +1187,7 @@ setTimeout(function () {
     var msg = 'Failed to load data: ' + err.message;
     showError('risks-body', 10, msg);
     showError('issues-body', 7, msg);
-    showError('requests-body', 7, msg);
+    showError('requests-body', 6, msg);
   });
 }, 100);
 ```
