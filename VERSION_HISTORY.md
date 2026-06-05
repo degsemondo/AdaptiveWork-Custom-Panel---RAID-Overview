@@ -1,5 +1,31 @@
 # Version History
 
+## v2.4 - Action CRUD (2026-06-05)
+
+### What's New
+- **Add / edit / delete actions** on Risks, Issues and Change Requests. The
+  expandable "Associated actions" block now has:
+  - an **Add** button per record that inserts a draft action,
+  - **Edit** and **Delete** controls on each action row,
+  - an inline form with Name (required), Owner (user type-ahead), Due date and
+    State (`ActionItemState` picklist).
+  Create uses `PUT /objects/ActionItem` with `Container` = the parent id; update
+  uses `POST /objects/ActionItem/{id}`; delete uses `DELETE`. `ActionItemState`
+  options come from existing data + metadata.
+
+### Deployment note
+- Icons are provided by the **Tabler icon webfont**, loaded via the panel's
+  **External Resources / External Script** config field (a `<link>` placed in the
+  HTML field is ignored by the panel renderer). Add this URL there:
+  `https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css`
+  Without it the panel still works (controls fall back to text), but the icons
+  won't render.
+
+### Files
+- `script.md`, `css.md` (HTML and Data unchanged from v2.3)
+
+---
+
 ## v2.3 - Layout, Change Requests & Excel Round-Trip (2026-06-05)
 
 ### What's New
