@@ -306,14 +306,17 @@ table.aw-table tbody tr:hover {
   gap: 4px;
 }
 .act-edit, .act-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
   border: 1px solid #dadce0;
   background: #fff;
   cursor: pointer;
   border-radius: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 8px;
-  line-height: 1.4;
+  font-size: 14px;
+  line-height: 1;
 }
 .act-edit { color: #8B3A62; }
 .act-del  { color: #c2185b; }
