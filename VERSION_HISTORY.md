@@ -1,5 +1,35 @@
 # Version History
 
+## v2.3 - Layout, Change Requests & Excel Round-Trip (2026-06-05)
+
+### What's New
+- **Single-row header** — removed the "Project risks, issues & requests" title
+  and merged the tab bar with a shared toolbar (search, status filter, New) on
+  one row. The toolbar is contextual: switching tabs updates the search
+  placeholder, status options, and New-button label, all acting on the active tab.
+- **Change Requests tab** — the Requests tab is relabelled "Change Requests" and
+  shows only `EnhancementRequest` records where `RequestType = Change Request`.
+  New items created here are set to that type automatically; the redundant Type
+  column was removed.
+- **ID column** on all three tabs (`SYSID`) — shown in the table, export, and used
+  as the match key for import.
+- **Import from Excel** — an "Import" button reads a workbook produced by Export
+  (parsed in-browser via `DOMParser`, no library), matches rows by ID, updates
+  changed cells, and creates rows with no ID (with the `RelatedWork` project
+  link; Change Requests get their type set). Picklists match by label, owner by
+  name, dates by parsing the shown value; read-only columns and empty cells are
+  ignored. A confirm summary (update/create counts + warnings) is shown before
+  applying.
+
+### Files
+- `script.md`, `html.md` (CSS and Data unchanged from v2.2)
+
+### Notes
+- Re-export from v2.3 before editing/importing — earlier exports lack the ID
+  columns on Issues/Change Requests.
+
+---
+
 ## v2.2 - Risks Field Rework (2026-06-03)
 
 Reworks the Risks tab to a new field specification (Risks only; Issues and

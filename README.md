@@ -4,7 +4,7 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 ## Version
 
-**Current Stable Version: v2.2** (Risks field rework)
+**Current Stable Version: v2.3** (Layout, Change Requests & Excel round-trip)
 
 ## Features
 
@@ -31,10 +31,10 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 
-1. **HTML Field**: Copy contents of `v2.2/html.md` into the HTML field
-2. **CSS Field**: Copy contents of `v2.2/css.md` into the CSS field
-3. **Script Field**: Copy contents of `v2.2/script.md` into the Script field
-4. **Data Field**: Copy contents of `v2.2/data.md` into the Data field (JSON)
+1. **HTML Field**: Copy contents of `v2.3/html.md` into the HTML field
+2. **CSS Field**: Copy contents of `v2.3/css.md` into the CSS field
+3. **Script Field**: Copy contents of `v2.3/script.md` into the Script field
+4. **Data Field**: Copy contents of `v2.3/data.md` into the Data field (JSON)
 
 ## Technical Details
 
@@ -57,6 +57,11 @@ Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 - `filterTable/filterByStatus()` - Search and filter logic
 
 ## Version History
+
+### v2.3 (2026-06-05)
+- **New**: Single-row header (title removed; tabs + shared toolbar on one line)
+- **New**: Change Requests tab (filtered to `RequestType = Change Request`); Type column removed
+- **New**: ID column on all tabs; **Import from Excel** to update/create records from an exported workbook
 
 ### v2.2 (2026-06-03)
 - **Reworked Risks tab**: ID, Title, Probability, Impact, Score, Status, Owner, Reporting Level, Impact Date
