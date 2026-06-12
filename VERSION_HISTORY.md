@@ -1,5 +1,21 @@
 # Version History
 
+## v2.5 - Issues Rework & Detail Deep Links (2026-06-06)
+
+### What's New
+- **Issues tab reworked** to match the Risks layout: ID (`SYSID`), Title,
+  Impact (`C_IssueImpact`), Score (`C_IssueScore`, read-only heat-map), Status
+  (`State`), Owner (`Owner`, type-ahead), Reporting Level (`C_ReportingLevel`),
+  Impact Date (`C_ImpactDate`). Priority / Raised / Due date columns removed.
+- **Clickable ID deep links** — the ID cell on every tab links to the entity's
+  AdaptiveWork detail page (`https://<appHost>/Clarizen/<Type>/<id>`), opening
+  in a new tab. Linked the ID (not Title) to avoid clashing with click-to-edit.
+
+### Files
+- `script.md`, `css.md` (HTML and Data unchanged from v2.4)
+
+---
+
 ## v2.4 - Action CRUD (2026-06-05)
 
 ### What's New
