@@ -599,6 +599,22 @@ function cellDisplay(field, raw) {
   return esc(raw);
 }
 
+/* ---------- 10b. Detail-page deep link ----------
+   AdaptiveWork detail pages use the Clarizen URL scheme on the app host:
+   https://<appHost>/Clarizen/<EntityType>/<id>. The record's rawId is already
+   "/Risk/<id>", so we just prefix it. Opens in a new tab. */
+function detailUrl(rawId) {
+  if (!rawId) return '';
+  return 'https://' + window.location.hostname + '/Clarizen/' + String(rawId).replace(/^\//, '');
+}
+function idLink(rawId, sysId) {
+  var label = esc(sysId || '—');
+  var url = detailUrl(rawId);
+  if (!url) return label;
+  return '<a class="id-link" href="' + esc(url) + '" target="_blank" rel="noopener" ' +
+    'title="Open in AdaptiveWork">' + label + '</a>';
+}
+
 /* ---------- 11. Renderers ---------- */
 function renderRisks(risks, actionMap) {
   var tbody = document.getElementById('risks-body');
@@ -612,7 +628,7 @@ function renderRisks(risks, actionMap) {
     var hm = riskRatingHeatMap(r.riskRating);
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + esc(r.sysId) + '</td>' +
+      '<td>' + idLink(r.rawId, r.sysId) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell('C_Impact',         r.rawId, r.impactRaw,         esc(r.impact)) +
@@ -639,7 +655,7 @@ function renderIssues(issues, actionMap) {
     var hm = riskRatingHeatMap(issue.score);
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + esc(issue.sysId) + '</td>' +
+      '<td>' + idLink(issue.rawId, issue.sysId) + '</td>' +
       editCell('Title',            issue.rawId, issue.name,              esc(issue.name)) +
       editCell('C_IssueImpact',    issue.rawId, issue.impactRaw,         esc(issue.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(issue.score) + '</span></td>' +
@@ -664,7 +680,7 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + esc(req.sysId) + '</td>' +
+      '<td>' + idLink(req.rawId, req.sysId) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +

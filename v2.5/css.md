@@ -517,4 +517,14 @@ table.aw-table tbody tr:hover {
 .heatmap-very-high { background: #f4511e; }
 .heatmap-critical { background: #d32f2f; }
 .heatmap-neutral { background: #9e9e9e; }
+
+/* ── ID deep link ── */
+.id-link {
+  color: #8B3A62;
+  font-weight: 600;
+  text-decoration: none;
+}
+.id-link:hover {
+  text-decoration: underline;
+}
 ```
