@@ -92,7 +92,7 @@
               <th>Owner</th>
               <th>Reporting Level</th>
               <th>Impact Date</th>
-              <th style="width:40px"></th>
+              <th style="width:58px"></th>
             </tr>
           </thead>
           <tbody id="risks-body">

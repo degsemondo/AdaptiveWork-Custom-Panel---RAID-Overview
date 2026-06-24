@@ -651,10 +651,8 @@ function renderRisks(risks, actionMap) {
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
       editCell('C_ReportingLevel', r.rawId, r.reportingLevelRaw, esc(r.reportingLevel)) +
       editCell('C_ImpactDate',     r.rawId, r.impactDate || '',  '<span class="action-due ' + dueCls(r.impactDate) + '">' + fmtDate(r.impactDate) + '</span>') +
-      '<td class="row-action-cell">' +
-        '<button class="row-action create-issue" data-id="' + esc(r.rawId) + '" data-name="' + esc(r.name) + '"' +
-        ' title="Create Issue — sets this Risk to Realised and creates a linked Issue" aria-label="Create Issue from this risk">' +
-        '<i class="ti ti-bug" aria-hidden="true"></i></button>' +
+      '<td class="row-action-cell" data-id="' + esc(r.rawId) + '" data-name="' + esc(r.name) + '">' +
+        createIssueButtonHtml() +
       '</td>' +
       '</tr>' +
       '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="11">' + actionsBlock(actions, r.rawId) + '</td></tr>';
@@ -837,27 +835,52 @@ function executeCustomAction(base, sid, targetId, actionName, values) {
   });
 }
 
-/* Row-level "Create Issue" action on a Risk. Confirms, runs the custom action
-   (which sets the Risk to Realised and creates a linked Issue), then reloads —
-   the now-Realised Risk drops out of the list and the new Issue appears. */
-function createIssueFromRisk(btn) {
-  var id = btn.getAttribute('data-id');
+/* Row-level "Create Issue" action on a Risk — runs the custom action (which sets
+   the Risk to Realised and creates a linked Issue), then reloads so the now-
+   Realised Risk drops out of the list and the new Issue appears.
+
+   No browser dialog: the bug button arms an inline ✓/✗ confirm in the cell.
+   The Risk id/name live on the enclosing .row-action-cell. */
+function createIssueButtonHtml() {
+  return '<button class="row-action create-issue"' +
+    ' title="Create Issue — sets this Risk to Realised and creates a linked Issue"' +
+    ' aria-label="Create Issue from this risk"><i class="ti ti-bug" aria-hidden="true"></i></button>';
+}
+/* First click: swap the bug button for an inline confirm (✓) / cancel (✗) pair. */
+function armCreateIssue(btn) {
+  var cell = btn.closest('.row-action-cell');
+  if (!cell) return;
+  cell.innerHTML =
+    '<span class="ci-confirm-wrap">' +
+      '<button class="row-action ci-confirm" title="Confirm — create Issue" aria-label="Confirm create Issue"><i class="ti ti-check" aria-hidden="true"></i></button>' +
+      '<button class="row-action ci-cancel" title="Cancel" aria-label="Cancel create Issue"><i class="ti ti-x" aria-hidden="true"></i></button>' +
+    '</span>';
+}
+/* ✗ — restore the original bug button. */
+function disarmCreateIssue(cell) {
+  if (cell) cell.innerHTML = createIssueButtonHtml();
+}
+/* ✓ — run the custom action against the Risk on this cell. */
+function runCreateIssue(cell) {
+  if (!cell) return;
+  var id = cell.getAttribute('data-id');
   if (!id) return;
-  var name = btn.getAttribute('data-name') || 'this risk';
-  if (!window.confirm('Create an Issue from "' + name + '"?\n\nThis runs the "' + CREATE_ISSUE_ACTION +
-      '" action, which sets the Risk to Realised and creates a new linked Issue.')) return;
-
   var c;
-  try { c = getContext(); } catch (e) { alert('Cannot run action: ' + e.message); return; }
-
-  btn.disabled = true;
-  btn.innerHTML = '<i class="ti ti-loader-2 spin" aria-hidden="true"></i>';
+  try { c = getContext(); }
+  catch (e) {
+    cell.innerHTML = '<button class="row-action create-issue ci-error" title="Cannot run action: ' +
+      esc(e.message) + ' — click to retry" aria-label="Create Issue failed, click to retry">' +
+      '<i class="ti ti-alert-triangle" aria-hidden="true"></i></button>';
+    return;
+  }
+  cell.innerHTML = '<span class="row-action" title="Creating Issue…"><i class="ti ti-loader-2 spin" aria-hidden="true"></i></span>';
   executeCustomAction(c.base, c.sid, id, CREATE_ISSUE_ACTION)
     .then(function () { location.reload(); })
     .catch(function (err) {
-      alert('Create Issue failed: ' + err.message);
-      btn.disabled = false;
-      btn.innerHTML = '<i class="ti ti-bug" aria-hidden="true"></i>';
+      console.error('Create Issue failed:', err);
+      cell.innerHTML = '<button class="row-action create-issue ci-error" title="Create Issue failed: ' +
+        esc(err.message) + ' — click to retry" aria-label="Create Issue failed, click to retry">' +
+        '<i class="ti ti-alert-triangle" aria-hidden="true"></i></button>';
     });
 }
 
@@ -1230,9 +1253,13 @@ function initUI() {
       var aDel = e.target.closest('.act-del');
       if (aDel) { deleteAction(aDel.closest('.action-item')); return; }
 
-      /* Row-level Create Issue action (Risks tab) */
+      /* Row-level Create Issue action (Risks tab) — inline ✓/✗ confirm */
+      var ciOk = e.target.closest('.ci-confirm');
+      if (ciOk) { runCreateIssue(ciOk.closest('.row-action-cell')); return; }
+      var ciNo = e.target.closest('.ci-cancel');
+      if (ciNo) { disarmCreateIssue(ciNo.closest('.row-action-cell')); return; }
       var ci = e.target.closest('.create-issue');
-      if (ci) { createIssueFromRisk(ci); return; }
+      if (ci) { armCreateIssue(ci); return; }
 
       var editable = e.target.closest('.editable');
       if (editable && !editable.classList.contains('editing')) { startEdit(editable); return; }

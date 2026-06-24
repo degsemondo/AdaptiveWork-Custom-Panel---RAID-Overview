@@ -561,6 +561,18 @@ table.aw-table tbody tr:hover {
   border-color: #8B3A62;
 }
 
+/* Inline ✓/✗ confirm (replaces the browser confirm dialog) */
+.ci-confirm-wrap { display: inline-flex; gap: 4px; }
+.ci-confirm-wrap .row-action { width: 22px; }
+.ci-confirm { color: #2e7d32; }
+.ci-confirm:hover { background: rgba(46, 125, 50, 0.12); border-color: #2e7d32; }
+.ci-cancel { color: #5f6368; }
+.ci-cancel:hover { background: #f0f0f0; border-color: #bdc1c6; }
+
+/* Failed action — alert-triangle button; click to retry */
+.create-issue.ci-error { color: #c2185b; border-color: #c2185b; }
+.create-issue.ci-error:hover { background: #fce4ec; }
+
 /* Spinner for in-progress row actions */
 @keyframes aw-spin { to { transform: rotate(360deg); } }
 .row-action .spin { animation: aw-spin 0.7s linear infinite; }
