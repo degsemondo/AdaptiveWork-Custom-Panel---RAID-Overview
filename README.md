@@ -4,7 +4,7 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 ## Version
 
-**Current Stable Version: v2.5** (Issues rework & detail deep links)
+**Current Stable Version: v2.6** (auto-commit inline edits)
 
 ## Features
 
@@ -31,10 +31,10 @@ A professional custom panel for AdaptiveWork that displays Risks, Issues, and Re
 
 Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 
-1. **HTML Field**: Copy contents of `v2.5/html.md` into the HTML field
-2. **CSS Field**: Copy contents of `v2.5/css.md` into the CSS field
-3. **Script Field**: Copy contents of `v2.5/script.md` into the Script field
-4. **Data Field**: Copy contents of `v2.5/data.md` into the Data field (JSON)
+1. **HTML Field**: Copy contents of `v2.6/html.md` into the HTML field
+2. **CSS Field**: Copy contents of `v2.6/css.md` into the CSS field
+3. **Script Field**: Copy contents of `v2.6/script.md` into the Script field
+4. **Data Field**: Copy contents of `v2.6/data.md` into the Data field (JSON)
 5. **External Resources Field**: Add the Tabler icon webfont so icons render:
    `https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css`
    (Putting this `<link>` in the HTML field does not work — the panel renderer
@@ -61,6 +61,9 @@ Deploy to your AdaptiveWork instance as a custom panel on the Project object:
 - `filterTable/filterByStatus()` - Search and filter logic
 
 ## Version History
+
+### v2.6 (2026-06-12)
+- **Inline edits auto-commit on change** (picklists/dates on change, text on blur/Enter, Owner on pick); Save/Cancel buttons removed, Esc cancels
 
 ### v2.5 (2026-06-06)
 - **Reworked Issues tab** (ID, Title, Impact, Score, Status, Owner, Reporting Level, Impact Date)
