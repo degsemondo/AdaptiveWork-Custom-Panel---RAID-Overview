@@ -1,5 +1,24 @@
 # Version History
 
+## v2.7 - Risk States & Create Issue Action (2026-06-24)
+
+### What's New
+- **Risks tab restricted to Opened / Closed** — only those states display
+  (Realised etc. are hidden); the status filter offers Opened / Closed, and the
+  pills are coloured to match (Opened = open, Closed = resolved/green).
+- **Create Issue per-row action** — a 🐞 icon button in a new trailing Risk
+  column runs the Risk `Create Issue` custom action via
+  `POST /V2.0/services/data/executeCustomAction` (`targetId` + `customAction`),
+  flipping the Risk to Realised and creating a linked Issue, then reloads.
+- **Inline ✓/✗ confirm** — the action confirms in-cell rather than via a browser
+  dialog; failures show as an inline ⚠ retry button (no `alert()`). The
+  `CREATE_ISSUE_ACTION` constant holds the action name if it needs changing.
+
+### Files
+- `html.md`, `css.md`, `script.md` (Data unchanged from v2.6)
+
+---
+
 ## v2.6 - Auto-Commit Inline Edits (2026-06-12)
 
 ### What's New
