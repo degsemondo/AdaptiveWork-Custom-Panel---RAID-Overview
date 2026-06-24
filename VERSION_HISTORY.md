@@ -1,5 +1,20 @@
 # Version History
 
+## v2.6 - Auto-Commit Inline Edits (2026-06-12)
+
+### What's New
+- **Inline edits commit automatically** on change, matching AdaptiveWork's
+  native editing — the per-cell Save/Cancel buttons are gone. Picklists and
+  dates commit on change, free text on blur or Enter, and the Owner type-ahead
+  commits when a name is picked. **Esc** cancels; unchanged values or a blanked
+  Title revert without an API call. A brief "Saving…" shows while it persists.
+- The action add/edit form keeps its Save/Cancel (it's a multi-field form).
+
+### Files
+- `script.md`, `css.md` (HTML and Data unchanged from v2.5)
+
+---
+
 ## v2.5 - Issues Rework & Detail Deep Links (2026-06-06)
 
 ### What's New
