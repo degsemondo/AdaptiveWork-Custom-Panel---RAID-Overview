@@ -132,64 +132,47 @@ var PICK_OPTIONS = {
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
-/* Fallback "/Type" prefix used only if no existing record reveals it.
-   Picklist TYPE names are "C_" + the DEFINING entity + the field's label
-   (Impact/Probability are defined on Risk -> /C_RiskImpact, /C_RiskProbability;
-   Reporting Level is defined on the Case ancestor -> /C_CaseReportingLevel). */
-var PICK_PREFIX_DEFAULT = {
-  C_Impact: '/C_RiskImpact', C_Likelihood: '/C_RiskProbability',
-  C_IssueImpact: '/C_IssueImpact', C_ReportingLevel: '/C_CaseReportingLevel'
-};
-
-/* Detect the "/Type" prefix for a field from any raw value present in the data. */
-function pickPrefix(field) {
-  var arr = PICK[field] || [];
-  for (var i = 0; i < arr.length; i++) {
-    var v = arr[i];
-    if (v && v.charAt(0) === '/') { var p = v.split('/'); p.pop(); return p.join('/'); }
-  }
-  return PICK_PREFIX_DEFAULT[field] || '';
-}
-
-/* Build [{ raw, label }] options for a picklist field.
-   - Fields with a canonical list (Impact / Probability) show all options in
-     order; the raw path is reused from the data when available, else built from
-     the detected/default "/Type" prefix.
-   - Other fields fall back to the values present in the loaded data.
-   - `current` (the row's raw value) is always included so it stays selectable. */
+/* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
+   We never fabricate a "/Type/Value" path. Those paths differ per environment
+   (they weren't migrated 1:1), and sending a made-up path fails to save with a
+   500. The real, saveable option paths come only from:
+     1. AdaptiveWork metadata (describeEntities) for THIS environment, else
+     2. the distinct raw values actually present in the loaded data.
+   PICK_OPTIONS is used ONLY to order/relabel options that genuinely exist here —
+   it can never introduce a value the environment doesn't have. `current` (the
+   row's own raw value) is always kept selectable, even if it is a stale or
+   unmigrated path, so the cell still shows and the user can pick a valid one. */
 function pickOptionList(field, current) {
-  var out = [], seen = {};
+  var out = [], seenRaw = {};
+  function push(raw, label) {
+    if (raw === null || raw === undefined || raw === '') return;
+    if (seenRaw[raw]) return;
+    seenRaw[raw] = 1;
+    out.push({ raw: raw, label: label || cleanLabel(raw) });
+  }
 
-  /* Prefer real option paths from metadata — no prefix guessing needed. */
+  /* Real, saveable options for this environment (metadata preferred). */
+  var real = [];
   var meta = PICK_META[field];
   if (meta && meta.length) {
-    var seenM = {};
-    meta.forEach(function (o) { if (o.raw && !seenM[o.raw]) { seenM[o.raw] = 1; out.push(o); } });
-    if (current && !seenM[current]) out.push({ raw: current, label: cleanLabel(current) });
-    return out;
-  }
-
-  function add(raw) {
-    if (raw === null || raw === undefined || raw === '') return;
-    var lbl = cleanLabel(raw);
-    if (seen[lbl]) return;
-    seen[lbl] = true;
-    out.push({ raw: raw, label: lbl });
-  }
-
-  var canon = PICK_OPTIONS[field];
-  if (canon) {
-    var prefix = pickPrefix(field);
-    var byLabel = {};
-    (PICK[field] || []).forEach(function (r) { byLabel[cleanLabel(r)] = r; });
-    canon.forEach(function (lbl) {
-      add(byLabel[lbl] || (prefix ? prefix + '/' + lbl : lbl));
-    });
-    (PICK[field] || []).forEach(add);   /* keep any non-standard legacy values */
+    real = meta.slice();
   } else {
-    (PICK[field] || []).forEach(add);
+    (PICK[field] || []).forEach(function (r) { real.push({ raw: r, label: cleanLabel(r) }); });
   }
-  add(current);
+
+  /* Optional canonical ordering, matched by label — real options only. */
+  var canon = PICK_OPTIONS[field];
+  if (canon && real.length) {
+    var byLabel = {};
+    real.forEach(function (o) { byLabel[cleanLabel(o.raw).toLowerCase()] = o; });
+    canon.forEach(function (lbl) {
+      var m = byLabel[lbl.toLowerCase()];
+      if (m) push(m.raw, lbl);
+    });
+  }
+  real.forEach(function (o) { push(o.raw, o.label); });   /* everything real, in order */
+
+  if (current) push(current, cleanLabel(current));        /* keep the row's own value */
   return out;
 }
 
