@@ -871,6 +871,7 @@ function runCreateIssue(cell) {
   }
   cell.innerHTML = '<span class="row-action" title="Creating Issue…"><i class="ti ti-loader-2 spin" aria-hidden="true"></i></span>';
   executeCustomAction(c.base, c.sid, id, CREATE_ISSUE_ACTION)
+    .then(function () { return completeRiskActions(c, id); })
     .then(function () { location.reload(); })
     .catch(function (err) {
       console.error('Create Issue failed:', err);
@@ -878,6 +879,22 @@ function runCreateIssue(cell) {
         esc(err.message) + ' — click to retry" aria-label="Create Issue failed, click to retry">' +
         '<i class="ti ti-alert-triangle" aria-hidden="true"></i></button>';
     });
+}
+
+/* After a Risk is converted to an Issue, mark all of its associated actions
+   Completed. Best-effort: a failure to complete one action doesn't abort the
+   flow. Uses the environment's real ActionItemState "Completed" path. */
+function completeRiskActions(c, riskId) {
+  var actions = (DATA.actionMap && DATA.actionMap[riskId]) || [];
+  if (!actions.length) return Promise.resolve();
+  var doneRaw = pickRawByLabel('ActionItemState', ['Completed', 'Complete']);
+  if (!doneRaw) return Promise.resolve();   /* can't resolve a Completed value in this env */
+  var doneLbl = cleanLabel(doneRaw).toLowerCase();
+  return Promise.all(actions.map(function (a) {
+    if (cleanLabel(a.stateRaw).toLowerCase() === doneLbl) return true;   /* already complete */
+    return updateObject(c.base, c.sid, a.rawId, { ActionItemState: doneRaw })
+      .then(function () { return true; }, function () { return false; });
+  }));
 }
 
 /* RelatedWork ties a Case (Risk/Issue/Request) to a WorkItem (the project).
@@ -915,7 +932,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
       { type: 'pick',   field: 'C_Impact' },
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
-      { type: 'pick',   field: 'State' },
+      { type: 'static', html: 'Opened' },                  /* new risks are always Opened */
       { type: 'user',   field: 'Owner' },
       { type: 'pick',   field: 'C_ReportingLevel' },
       { type: 'date',   field: 'C_ImpactDate', actions: true }
@@ -1030,6 +1047,11 @@ function saveNewRow(row) {
     var rt = changeRequestTypeRaw();
     if (rt) fields.RequestType = rt;
   }
+  /* New Risks are always created with State = Opened. */
+  if (entityType === 'Risk' && !fields.State) {
+    var opened = pickRawByLabel('State', ['Opened']);
+    if (opened) fields.State = opened;
+  }
   if (!fields.Title) {
     alert('Please enter a name.');
     var t = row.querySelector('input[data-field="Title"]');
@@ -1048,18 +1070,26 @@ function createNewRisk()    { openNewRow('Risk'); }
 function createNewIssue()   { openNewRow('Issue'); }
 function createNewRequest() { openNewRow('EnhancementRequest'); }
 
-/* Resolve the real "/Type/Value" path for RequestType = Change Request, so new
-   change requests are created with the right type (and show in this tab). Uses
-   metadata first, then a value already present in the data, else a best guess. */
-function changeRequestTypeRaw() {
+/* Resolve a picklist field's real "/Type/Value" path for one of the given
+   labels (case-insensitive), sourced from THIS environment — metadata first,
+   then values present in the data. Returns '' if none match (never fabricates a
+   path, since those differ per environment). */
+function pickRawByLabel(field, labels) {
+  var wanted = labels.map(function (l) { return String(l).toLowerCase(); });
   function findIn(list) {
     for (var i = 0; i < (list || []).length; i++) {
       var raw = (list[i] && list[i].raw !== undefined) ? list[i].raw : list[i];
-      if (raw && cleanLabel(raw).toLowerCase() === 'change request') return raw;
+      if (raw && wanted.indexOf(cleanLabel(raw).toLowerCase()) > -1) return raw;
     }
     return '';
   }
-  return findIn(PICK_META.RequestType) || findIn(PICK.RequestType) || '/RequestType/Change Request';
+  return findIn(PICK_META[field]) || findIn(PICK[field]) || '';
+}
+
+/* Resolve the real "/Type/Value" path for RequestType = Change Request, so new
+   change requests are created with the right type (and show in this tab). */
+function changeRequestTypeRaw() {
+  return pickRawByLabel('RequestType', ['Change Request']) || '/RequestType/Change Request';
 }
 
 /* ---------- 15. Inline editing (auto-commit, AdaptiveWork-style) ----------
