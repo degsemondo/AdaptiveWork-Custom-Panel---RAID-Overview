@@ -285,8 +285,9 @@ function loadPicklistValues() {
   return Promise.all(jobs).then(function (results) {
     console.info('[RAID panel] picklist values:', results);
     results.forEach(function (r) {
+      var sample = (PICK_META[r.field] && PICK_META[r.field][0]) ? PICK_META[r.field][0].raw : '?';
       diag('picklist ' + r.field + ' [' + r.type + ']: ' +
-        (r.error ? 'none — tried ' + r.error : (r.count + ' value(s) from ' + r.type)));
+        (r.error ? 'none — tried ' + r.error : (r.count + ' value(s); sends e.g. ' + sample)));
     });
     return results;
   });
@@ -790,6 +791,13 @@ function renderAll(risks, issues, requests, actionMap) {
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
+
+  /* DIAGNOSTIC: show the exact value format an existing record already stores,
+     so we can match the create/save payload to what each field really expects. */
+  if (risks[0]) diag('sample Risk raw: prob=' + (risks[0].probabilityRaw || '(empty)') +
+    '  impact=' + (risks[0].impactRaw || '(empty)') + '  reporting=' + (risks[0].reportingLevelRaw || '(empty)'));
+  if (issues[0]) diag('sample Issue raw: impact=' + (issues[0].impactRaw || '(empty)') +
+    '  reporting=' + (issues[0].reportingLevelRaw || '(empty)'));
 }
 
 /* ---------- 12. Loading / error helpers ---------- */
