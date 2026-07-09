@@ -36,6 +36,14 @@ var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
    C_IssueIssueImpact; Risk Probability is C_Likelihood -> C_RiskLikelihood.) */
 var RISK_IMPACT_FIELD = 'C_ImpactR';
 
+/* Impact Date field API name on the ISSUE entity. In this tenant the Issue
+   entity has NO C_ImpactDate field (create/update reject it with InvalidField),
+   so it's disabled ('') for Issue: the Issues "Impact Date" column shows
+   read-only "—" and it's omitted from the issue query / create / edit / import.
+   Risk keeps C_ImpactDate. If Issue has an impact-date field under another name,
+   set this to its API name to re-enable the column for Issues. */
+var ISSUE_IMPACTDATE_FIELD = '';
+
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
@@ -49,7 +57,7 @@ function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
 function isPillField(f) { return f === 'State' || f === 'Priority'; }
-function isDateField(f) { return f === 'DueDate' || f === 'C_ImpactDate'; }
+function isDateField(f) { return f === 'DueDate' || f === 'C_ImpactDate' || (!!ISSUE_IMPACTDATE_FIELD && f === ISSUE_IMPACTDATE_FIELD); }
 function addPick(field, raw) {
   if (!raw) return;
   if (!PICK[field]) PICK[field] = [];
@@ -402,7 +410,7 @@ function toIssue(e) {
     ownerRaw:          (e.Owner && e.Owner.id) || '',
     owner:             (e.Owner && e.Owner.Name) || '—',
     reportingLevelRaw: rlRaw,  reportingLevel: cleanLabel(rlRaw) || '—',
-    impactDate:        e.C_ImpactDate || null,
+    impactDate:        ISSUE_IMPACTDATE_FIELD ? (e[ISSUE_IMPACTDATE_FIELD] || null) : null,
     rawId:             e.id || ''
   };
 }
@@ -742,7 +750,9 @@ function renderIssues(issues, actionMap) {
       editCell('State',            issue.rawId, issue.statusRaw,         pill(issue.status)) +
       editCell('Owner',            issue.rawId, issue.ownerRaw,          esc(issue.owner)) +
       editCell('C_ReportingLevel', issue.rawId, issue.reportingLevelRaw, esc(issue.reportingLevel)) +
-      editCell('C_ImpactDate',     issue.rawId, issue.impactDate || '',  '<span class="action-due ' + dueCls(issue.impactDate) + '">' + fmtDate(issue.impactDate) + '</span>') +
+      (ISSUE_IMPACTDATE_FIELD
+        ? editCell(ISSUE_IMPACTDATE_FIELD, issue.rawId, issue.impactDate || '', '<span class="action-due ' + dueCls(issue.impactDate) + '">' + fmtDate(issue.impactDate) + '</span>')
+        : '<td><span class="action-due">' + fmtDate(issue.impactDate) + '</span></td>') +
       '</tr>' +
       '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="9">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
   }).join('');
@@ -1053,7 +1063,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'State' },
       { type: 'user',   field: 'Owner' },
       { type: 'pick',   field: 'C_ReportingLevel' },
-      { type: 'date',   field: 'C_ImpactDate', actions: true }
+      { type: 'date',   field: ISSUE_IMPACTDATE_FIELD, actions: true }
     ]
   },
   EnhancementRequest: {
@@ -1082,7 +1092,12 @@ function newRowCellHtml(cell) {
           '<button class="new-cancel">Cancel</button>' +
         '</div>'
       : '';
-    return '<td><input type="date" class="new-input edit-input" data-field="' + cell.field + '" />' + actions + '</td>';
+    /* Only render the date input if this entity actually has the field; the
+       Save/Cancel buttons still render so a fieldless date cell stays usable. */
+    var input = cell.field
+      ? '<input type="date" class="new-input edit-input" data-field="' + cell.field + '" />'
+      : '';
+    return '<td>' + input + actions + '</td>';
   }
   if (cell.type === 'user') {
     return '<td class="ta-cell"><input type="text" class="new-input ta-input" autocomplete="off"' +
@@ -1614,6 +1629,17 @@ var IMPORT_CFG = {
   }
 })();
 
+/* Issue's Impact Date field differs / is absent in this tenant — point the
+   Issue import column at ISSUE_IMPACTDATE_FIELD, or drop it if there is none. */
+(function () {
+  var iff = IMPORT_CFG.Issues.fields;
+  for (var i = iff.length - 1; i >= 0; i--) {
+    if (iff[i].hdr === 'Impact Date') {
+      if (ISSUE_IMPACTDATE_FIELD) iff[i].api = ISSUE_IMPACTDATE_FIELD; else iff.splice(i, 1);
+    }
+  }
+})();
+
 /* Current raw value of an API field on a loaded record (for change detection). */
 function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
@@ -1629,7 +1655,7 @@ function recCurrent(entityType, rec, api) {
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
     if (api === 'C_ReportingLevel') return rec.reportingLevelRaw;
-    if (api === 'C_ImpactDate')     return rec.impactDate || '';
+    if (ISSUE_IMPACTDATE_FIELD && api === ISSUE_IMPACTDATE_FIELD) return rec.impactDate || '';
   } else if (entityType === 'EnhancementRequest') {
     if (api === 'State')   return rec.statusRaw;
     if (api === 'DueDate') return rec.decisionBy || '';
@@ -1836,8 +1862,9 @@ setTimeout(function () {
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
     "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
-    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, " +
-    "C_ReportingLevel, C_ImpactDate FROM Issue WHERE PlannedFor = '" + c.projId + "'";
+    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel" +
+    (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
+    " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
   var qRequests =
     "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
     "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
