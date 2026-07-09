@@ -43,13 +43,13 @@ function isShownRiskState(label) {
    this one string. */
 var CREATE_ISSUE_ACTION = 'Create Issue';
 
-/* Reporting Level field API name on the RISK entity. In this tenant the Risk
-   entity has NO C_ReportingLevel field (create + query reject it with
-   InvalidField), so it's disabled ('') for Risk: the Risks "Reporting Level"
-   column shows a read-only "—" and it's omitted from the risk query / create /
-   import. Issue keeps C_ReportingLevel. If Risk later gains a reporting-level
-   field, set this to its API name to re-enable the column for Risks. */
-var RISK_REPORTING_FIELD = '';
+/* Reporting Level field API name on the RISK entity — DIFFERS from Issue's.
+   Confirmed on eu.clarizentb.com: Risk field = C_ReportingLevelR (picklist class
+   C_RiskReportingLevelR); Issue field = C_ReportingLevel (class
+   C_IssueReportingLevel). Set to '' to disable for Risk — the Risks "Reporting
+   Level" column then shows read-only "—" and is omitted from the risk query /
+   create / edit / import. */
+var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
 
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
@@ -59,7 +59,7 @@ var PICK = {};
 /* Authoritative picklist options fetched from AdaptiveWork metadata
    (field -> [{ raw, label }]). Preferred over guessing a "/Type" prefix. */
 var PICK_META = {};
-var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'ActionItemState'];
+var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'C_ReportingLevelR', 'ActionItemState'];
 function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
@@ -138,7 +138,8 @@ var PICK_OPTIONS = {
   C_Impact:         ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
   C_IssueImpact:    ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
-  C_ReportingLevel: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
+  C_ReportingLevel:  ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team'],
+  C_ReportingLevelR: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
 
 /* Custom picklists are their own entities whose INSTANCES are the values, so we
@@ -146,16 +147,19 @@ var PICK_OPTIONS = {
    picklist type (its "Class API Name"). Each row's id is the exact "/Type/Value"
    path to save; its Name is the label. Map: field -> CANDIDATE type entity names
    (tried in order; first one that exists + returns values wins).
-   All four confirmed from the field's "Class API Name" on eu.clarizentb.com:
+   All confirmed from each field's "Class API Name" on eu.clarizentb.com:
      C_Impact -> C_RiskImpact, C_Likelihood -> C_RiskProbability,
-     C_IssueImpact -> C_IssueIssueImpact, C_ReportingLevel -> C_IssueReportingLevel.
+     C_IssueImpact -> C_IssueIssueImpact,
+     C_ReportingLevel (Issue) -> C_IssueReportingLevel,
+     C_ReportingLevelR (Risk) -> C_RiskReportingLevelR.
    (State / Priority / RequestType / ActionItemState are system enums, sourced
    from the loaded data instead, so they aren't listed here.) */
 var PICK_LIST_TYPES = {
-  C_Impact:         ['C_RiskImpact'],
-  C_Likelihood:     ['C_RiskProbability'],
-  C_IssueImpact:    ['C_IssueIssueImpact'],
-  C_ReportingLevel: ['C_IssueReportingLevel']
+  C_Impact:          ['C_RiskImpact'],
+  C_Likelihood:      ['C_RiskProbability'],
+  C_IssueImpact:     ['C_IssueIssueImpact'],
+  C_ReportingLevel:  ['C_IssueReportingLevel'],
+  C_ReportingLevelR: ['C_RiskReportingLevelR']
 };
 
 /* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
@@ -789,7 +793,7 @@ function renderAll(risks, issues, requests, actionMap) {
     addPick('C_Impact', r.impactRaw);
     addPick('C_Likelihood', r.probabilityRaw);
     addPick('State', r.statusRaw);
-    addPick('C_ReportingLevel', r.reportingLevelRaw);
+    if (RISK_REPORTING_FIELD) addPick(RISK_REPORTING_FIELD, r.reportingLevelRaw);
     rememberUser(r.ownerRaw, r.owner);
   });
   issues.forEach(function (i) {
@@ -1605,10 +1609,16 @@ var IMPORT_CFG = {
   }
 };
 
-/* Risk has no Reporting Level field in this tenant — don't import it onto Risks. */
-if (!RISK_REPORTING_FIELD) {
-  IMPORT_CFG.Risks.fields = IMPORT_CFG.Risks.fields.filter(function (f) { return f.api !== 'C_ReportingLevel'; });
-}
+/* Risk's Reporting Level field API name differs from Issue's — point the Risk
+   import column at RISK_REPORTING_FIELD, or drop it if Risk has no such field. */
+(function () {
+  var rf = IMPORT_CFG.Risks.fields;
+  for (var i = rf.length - 1; i >= 0; i--) {
+    if (rf[i].hdr === 'Reporting Level') {
+      if (RISK_REPORTING_FIELD) rf[i].api = RISK_REPORTING_FIELD; else rf.splice(i, 1);
+    }
+  }
+})();
 
 /* Current raw value of an API field on a loaded record (for change detection). */
 function recCurrent(entityType, rec, api) {
@@ -1618,7 +1628,7 @@ function recCurrent(entityType, rec, api) {
     if (api === 'C_Impact')         return rec.impactRaw;
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
-    if (api === 'C_ReportingLevel') return rec.reportingLevelRaw;
+    if (RISK_REPORTING_FIELD && api === RISK_REPORTING_FIELD) return rec.reportingLevelRaw;
     if (api === 'C_ImpactDate')     return rec.impactDate || '';
   } else if (entityType === 'Issue') {
     if (api === 'C_IssueImpact')    return rec.impactRaw;
