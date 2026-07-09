@@ -136,14 +136,19 @@ var PICK_OPTIONS = {
 /* Custom picklists are their own entities whose INSTANCES are the values, so we
    read the current environment's real options with a plain query against the
    picklist type (its "Class API Name"). Each row's id is the exact "/Type/Value"
-   path to save; its Name is the label. Map: field -> picklist type entity.
+   path to save; its Name is the label. Map: field -> CANDIDATE type entity names
+   (tried in order; first one that exists + returns values wins). The tenant's
+   real "Class API Name" can differ, so we list the likely aliases and let the
+   loader discover which is valid. Confirmed on eu.clarizentb.com: C_RiskImpact,
+   C_RiskProbability. Issue Impact / Reporting Level types differ here — the
+   loader probes the alternatives and the on-screen diagnostics report the hit.
    (State / Priority / RequestType / ActionItemState are system enums, sourced
    from the loaded data instead, so they aren't listed here.) */
 var PICK_LIST_TYPES = {
-  C_Impact:         'C_RiskImpact',
-  C_Likelihood:     'C_RiskProbability',
-  C_IssueImpact:    'C_IssueImpact',
-  C_ReportingLevel: 'C_CaseReportingLevel'
+  C_Impact:         ['C_RiskImpact'],
+  C_Likelihood:     ['C_RiskProbability'],
+  C_IssueImpact:    ['C_IssueImpact', 'C_RiskImpact', 'C_Impact'],
+  C_ReportingLevel: ['C_CaseReportingLevel', 'C_ReportingLevel', 'C_RiskReportingLevel', 'C_IssueReportingLevel']
 };
 
 /* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
@@ -259,25 +264,39 @@ function loadPicklistMeta() {
 function loadPicklistValues() {
   var c = getContext();
   var jobs = Object.keys(PICK_LIST_TYPES).map(function (field) {
-    var type = PICK_LIST_TYPES[field];
-    return czql(c.base, c.sid, 'SELECT Name FROM ' + type)
-      .then(function (rows) {
-        if (!PICK_META[field] && rows && rows.length) {
-          PICK_META[field] = rows.map(function (r) {
-            return { raw: r.id, label: r.Name || cleanLabel(r.id) };
-          });
+    var candidates = PICK_LIST_TYPES[field];
+    var notes = [];
+    /* Try each candidate type in turn; stop at the first that returns values. */
+    function tryNext(i) {
+      if (i >= candidates.length) {
+        return { field: field, type: candidates.join(' | '), error: notes.join('; ') || 'no candidates' };
+      }
+      var type = candidates[i];
+      return czql(c.base, c.sid, 'SELECT Name FROM ' + type).then(
+        function (rows) {
+          if (rows && rows.length) {
+            if (!PICK_META[field]) {
+              PICK_META[field] = rows.map(function (r) { return { raw: r.id, label: r.Name || cleanLabel(r.id) }; });
+            }
+            return { field: field, type: type, count: rows.length };
+          }
+          notes.push(type + ': 0');
+          return tryNext(i + 1);
+        },
+        function (err) {
+          var m = (err && err.message) || String(err);
+          notes.push(type + ': ' + (m.indexOf('InvalidType') > -1 ? 'InvalidType' : m.slice(0, 60)));
+          return tryNext(i + 1);
         }
-        return { field: field, type: type, count: (rows ? rows.length : 0) };
-      })
-      .catch(function (err) {
-        return { field: field, type: type, error: (err && err.message) || String(err) };
-      });
+      );
+    }
+    return Promise.resolve().then(function () { return tryNext(0); });
   });
   return Promise.all(jobs).then(function (results) {
     console.info('[RAID panel] picklist values:', results);
     results.forEach(function (r) {
       diag('picklist ' + r.field + ' [' + r.type + ']: ' +
-        (r.error ? 'ERROR — ' + r.error : (r.count + ' value(s)')));
+        (r.error ? 'none — tried ' + r.error : (r.count + ' value(s) from ' + r.type)));
     });
     return results;
   });
