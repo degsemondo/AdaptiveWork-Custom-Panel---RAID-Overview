@@ -36,13 +36,11 @@ var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
    C_IssueIssueImpact; Risk Probability is C_Likelihood -> C_RiskLikelihood.) */
 var RISK_IMPACT_FIELD = 'C_ImpactR';
 
-/* Impact Date field API name on the ISSUE entity. In this tenant the Issue
-   entity has NO C_ImpactDate field (create/update reject it with InvalidField),
-   so it's disabled ('') for Issue: the Issues "Impact Date" column shows
-   read-only "—" and it's omitted from the issue query / create / edit / import.
-   Risk keeps C_ImpactDate. If Issue has an impact-date field under another name,
-   set this to its API name to re-enable the column for Issues. */
-var ISSUE_IMPACTDATE_FIELD = '';
+/* Impact Date field API name on the ISSUE entity — DIFFERS from Risk's.
+   Confirmed on eu.clarizentb.com: Issue = C_IssueImpactDate; Risk = C_ImpactDate.
+   Set to '' to disable for Issue (column shows read-only "—" and it's omitted
+   from the issue query / create / edit / import). */
+var ISSUE_IMPACTDATE_FIELD = 'C_IssueImpactDate';
 
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
@@ -89,6 +87,17 @@ function searchUsers(term) {
 function attachUserTypeahead(input, menu, onPick) {
   var timer = null;
   function close() { menu.style.display = 'none'; menu.innerHTML = ''; }
+  /* Position the menu with viewport-fixed coordinates anchored to the input, so
+     it floats above the table's overflow container instead of being clipped
+     (which also stops a stray scrollbar appearing on that container). */
+  function place() {
+    var r = input.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 2) + 'px';
+    menu.style.minWidth = r.width + 'px';
+    menu.style.zIndex = '1000';
+  }
   function pick(item) {
     input.value = item.getAttribute('data-name');
     input.setAttribute('data-user-id', item.getAttribute('data-id'));
@@ -97,11 +106,12 @@ function attachUserTypeahead(input, menu, onPick) {
     if (onPick) onPick();
   }
   function render(list) {
-    if (!list.length) { menu.innerHTML = '<div class="ta-empty">No matches</div>'; menu.style.display = 'block'; return; }
+    if (!list.length) { menu.innerHTML = '<div class="ta-empty">No matches</div>'; menu.style.display = 'block'; place(); return; }
     menu.innerHTML = list.map(function (u) {
       return '<div class="ta-item" data-id="' + esc(u.id) + '" data-name="' + esc(u.name) + '">' + esc(u.name) + '</div>';
     }).join('');
     menu.style.display = 'block';
+    place();
   }
   input.addEventListener('input', function () {
     input.setAttribute('data-user-id', '');   /* typing invalidates any prior pick */
@@ -458,6 +468,13 @@ function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+/* Today as yyyy-mm-dd, for pre-filling <input type="date"> on new rows. */
+function todayISO() {
+  var d = new Date();
+  var m = String(d.getMonth() + 1); if (m.length < 2) m = '0' + m;
+  var day = String(d.getDate());    if (day.length < 2) day = '0' + day;
+  return d.getFullYear() + '-' + m + '-' + day;
+}
 function dueCls(iso) {
   if (!iso) return '';
   return new Date(iso) < new Date() ? 'overdue' : 'ok';
@@ -527,9 +544,12 @@ function actionInnerHtml(name, ownerName, stateRaw, dueIso) {
   var s = actionStatusInfo(stateRaw, dueIso);
   var iconCol = s.done ? '#3B6D11' : '#185FA5';
   var dCls = s.late ? 'overdue' : 'ok';
+  var stateLbl = cleanLabel(stateRaw);
+  var statePill = stateLbl ? '<span class="pill ' + (PILL_MAP[stateLbl] || 'pill-medium') + '">' + esc(stateLbl) + '</span>' : '';
   return '<i class="ti ti-circle-check" style="font-size:14px;color:' + iconCol + '" aria-hidden="true"></i>' +
     '<span class="action-name">' + esc(name) + '</span>' +
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
+    statePill +
     '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' +
     '<span class="action-tools">' +
       '<button class="act-edit" title="Edit action" aria-label="Edit action"><i class="ti ti-pencil" aria-hidden="true"></i></button>' +
@@ -1093,9 +1113,10 @@ function newRowCellHtml(cell) {
         '</div>'
       : '';
     /* Only render the date input if this entity actually has the field; the
-       Save/Cancel buttons still render so a fieldless date cell stays usable. */
+       Save/Cancel buttons still render so a fieldless date cell stays usable.
+       New rows default the date to today. */
     var input = cell.field
-      ? '<input type="date" class="new-input edit-input" data-field="' + cell.field + '" />'
+      ? '<input type="date" class="new-input edit-input" data-field="' + cell.field + '" value="' + todayISO() + '" />'
       : '';
     return '<td>' + input + actions + '</td>';
   }
