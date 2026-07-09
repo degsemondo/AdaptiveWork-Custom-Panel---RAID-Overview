@@ -43,6 +43,14 @@ function isShownRiskState(label) {
    this one string. */
 var CREATE_ISSUE_ACTION = 'Create Issue';
 
+/* Reporting Level field API name on the RISK entity. In this tenant the Risk
+   entity has NO C_ReportingLevel field (create + query reject it with
+   InvalidField), so it's disabled ('') for Risk: the Risks "Reporting Level"
+   column shows a read-only "—" and it's omitted from the risk query / create /
+   import. Issue keeps C_ReportingLevel. If Risk later gains a reporting-level
+   field, set this to its API name to re-enable the column for Risks. */
+var RISK_REPORTING_FIELD = '';
+
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
@@ -372,7 +380,7 @@ function toRisk(e) {
   var probRaw = pickRaw(e.C_Likelihood);
   var rateRaw = pickRaw(e.C_RiskRating);
   var stRaw   = pickRaw(e.State);
-  var rlRaw   = pickRaw(e.C_ReportingLevel);
+  var rlRaw   = RISK_REPORTING_FIELD ? pickRaw(e[RISK_REPORTING_FIELD]) : '';
   return {
     id:                (e.id || '').replace(/\//g, '-'),
     sysId:             e.SYSID || '',
@@ -711,7 +719,9 @@ function renderRisks(risks, actionMap) {
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
       editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
-      editCell('C_ReportingLevel', r.rawId, r.reportingLevelRaw, esc(r.reportingLevel)) +
+      (RISK_REPORTING_FIELD
+        ? editCell(RISK_REPORTING_FIELD, r.rawId, r.reportingLevelRaw, esc(r.reportingLevel))
+        : '<td>' + esc(r.reportingLevel || '—') + '</td>') +
       editCell('C_ImpactDate',     r.rawId, r.impactDate || '',  '<span class="action-due ' + dueCls(r.impactDate) + '">' + fmtDate(r.impactDate) + '</span>') +
       '<td class="row-action-cell" data-id="' + esc(r.rawId) + '" data-name="' + esc(r.name) + '">' +
         createIssueButtonHtml() +
@@ -1031,7 +1041,7 @@ var NEW_ROW_DEFS = {
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
       { type: 'static', html: 'Opened' },                  /* new risks are always Opened */
       { type: 'user',   field: 'Owner' },
-      { type: 'pick',   field: 'C_ReportingLevel' },
+      (RISK_REPORTING_FIELD ? { type: 'pick', field: RISK_REPORTING_FIELD } : { type: 'static', html: '—' }),
       { type: 'date',   field: 'C_ImpactDate', actions: true }
     ]
   },
@@ -1595,6 +1605,11 @@ var IMPORT_CFG = {
   }
 };
 
+/* Risk has no Reporting Level field in this tenant — don't import it onto Risks. */
+if (!RISK_REPORTING_FIELD) {
+  IMPORT_CFG.Risks.fields = IMPORT_CFG.Risks.fields.filter(function (f) { return f.api !== 'C_ReportingLevel'; });
+}
+
 /* Current raw value of an API field on a loaded record (for change detection). */
 function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
@@ -1814,7 +1829,8 @@ setTimeout(function () {
 
   var qRisks =
     "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, State, Owner.Name, " +
-    "C_ReportingLevel, C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
+    (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
+    "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
     "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, " +
     "C_ReportingLevel, C_ImpactDate FROM Issue WHERE PlannedFor = '" + c.projId + "'";
