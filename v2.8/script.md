@@ -41,7 +41,7 @@ function isShownRiskState(label) {
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
    this one string. */
-var CREATE_ISSUE_ACTION = 'Create Issue';
+var CREATE_ISSUE_ACTION = 'Create Issue from Risk';
 
 /* Reporting Level field API name on the RISK entity — DIFFERS from Issue's.
    Confirmed on eu.clarizentb.com: Risk field = C_ReportingLevelR (picklist class
