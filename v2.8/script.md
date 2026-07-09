@@ -160,7 +160,7 @@ function attachUserTypeahead(input, menu, onPick) {
    is unchanged — we still send the "/Type/Value" raw path. */
 var PICK_OPTIONS = {
   C_Impact:         ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
-  C_ImpactR:        ['1 Minor', '2 Moderate', '3 Moderate+', '4 Significant', '5 Significant+', '6 Severe'],
+  C_ImpactR:        ['1 - Minor', '2 - Moderate', '3 - Moderate+', '4 - Significant', '5 - Significant+', '6 - Severe'],
   C_IssueImpact:    ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel:  ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team'],
