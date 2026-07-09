@@ -132,6 +132,20 @@ var PICK_OPTIONS = {
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
+
+/* Custom picklists are their own entities whose INSTANCES are the values, so we
+   read the current environment's real options with a plain query against the
+   picklist type (its "Class API Name"). Each row's id is the exact "/Type/Value"
+   path to save; its Name is the label. Map: field -> picklist type entity.
+   (State / Priority / RequestType / ActionItemState are system enums, sourced
+   from the loaded data instead, so they aren't listed here.) */
+var PICK_LIST_TYPES = {
+  C_Impact:         'C_RiskImpact',
+  C_Likelihood:     'C_RiskProbability',
+  C_IssueImpact:    'C_IssueImpact',
+  C_ReportingLevel: 'C_CaseReportingLevel'
+};
+
 /* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
    We never fabricate a "/Type/Value" path. Those paths differ per environment
    (they weren't migrated 1:1), and sending a made-up path fails to save with a
@@ -233,6 +247,36 @@ function loadPicklistMeta() {
         });
       });
     });
+}
+
+/* Load real option values for the custom picklists by querying each picklist
+   type entity (its instances ARE the values). Populates PICK_META[field] with
+   the exact env "/Type/Value" ids + labels — so dropdowns and saves use values
+   that actually exist here, even when no record uses them yet. Per-field and
+   best-effort: one type failing (or being empty) doesn't block the others, and
+   a summary is logged so an empty picklist (not configured in this env) is
+   visible. Does not overwrite options already resolved from metadata. */
+function loadPicklistValues() {
+  var c = getContext();
+  var jobs = Object.keys(PICK_LIST_TYPES).map(function (field) {
+    var type = PICK_LIST_TYPES[field];
+    return czql(c.base, c.sid, 'SELECT Name FROM ' + type)
+      .then(function (rows) {
+        if (!PICK_META[field] && rows && rows.length) {
+          PICK_META[field] = rows.map(function (r) {
+            return { raw: r.id, label: r.Name || cleanLabel(r.id) };
+          });
+        }
+        return { field: field, type: type, count: (rows ? rows.length : 0) };
+      })
+      .catch(function (err) {
+        return { field: field, type: type, error: (err && err.message) || String(err) };
+      });
+  });
+  return Promise.all(jobs).then(function (results) {
+    console.info('[RAID panel] picklist values:', results);
+    return results;
+  });
 }
 
 /* ---------- 2. CZQL fetch wrapper ---------- */
@@ -1704,7 +1748,11 @@ setTimeout(function () {
   showLoading('issues-body', 9);
   showLoading('requests-body', 7);
 
-  /* Load real picklist option paths from metadata (non-blocking). */
+  /* Load real picklist option paths (non-blocking). Query the custom picklist
+     type entities for their values, and also try describeEntities metadata. */
+  loadPicklistValues().catch(function (err) {
+    console.warn('Picklist value query failed:', err && err.message);
+  });
   loadPicklistMeta().catch(function (err) {
     console.warn('Picklist metadata unavailable, falling back to data-derived options:', err && err.message);
   });
