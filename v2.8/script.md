@@ -275,6 +275,10 @@ function loadPicklistValues() {
   });
   return Promise.all(jobs).then(function (results) {
     console.info('[RAID panel] picklist values:', results);
+    results.forEach(function (r) {
+      diag('picklist ' + r.field + ' [' + r.type + ']: ' +
+        (r.error ? 'ERROR — ' + r.error : (r.count + ' value(s)')));
+    });
     return results;
   });
 }
@@ -785,6 +789,37 @@ function showLoading(tbodyId, cols) {
 function showError(tbodyId, cols, msg) {
   document.getElementById(tbodyId).innerHTML =
     '<tr><td colspan="' + cols + '"><div class="no-data" style="color:#A32D2D">' + esc(msg) + '</div></td></tr>';
+}
+
+/* On-screen diagnostics — because console.info is often hidden by the console's
+   level filter (esp. on locked-down machines). Renders a dismissible box at the
+   top of the panel so load/picklist results are readable (and pasteable). */
+var DIAG_LINES = [];
+function diag(line) {
+  DIAG_LINES.push(line);
+  var box = document.getElementById('aw-diag');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'aw-diag';
+    box.style.cssText = 'margin:8px 12px;padding:8px 24px 8px 10px;border:1px solid #dadce0;' +
+      'border-radius:4px;background:#fffbe6;color:#202124;font:12px/1.45 monospace;' +
+      'white-space:pre-wrap;position:relative;';
+    var close = document.createElement('button');
+    close.textContent = '×';
+    close.title = 'Dismiss diagnostics';
+    close.setAttribute('aria-label', 'Dismiss diagnostics');
+    close.style.cssText = 'position:absolute;top:2px;right:6px;border:none;background:none;' +
+      'font-size:16px;line-height:1;cursor:pointer;color:#5f6368;';
+    close.addEventListener('click', function () { box.parentNode && box.parentNode.removeChild(box); });
+    var body = document.createElement('div');
+    body.id = 'aw-diag-body';
+    box.appendChild(close);
+    box.appendChild(body);
+    var panel = document.querySelector('.aw-panel') || document.body;
+    panel.insertBefore(box, panel.firstChild);
+  }
+  var bodyEl = document.getElementById('aw-diag-body');
+  if (bodyEl) bodyEl.textContent = 'RAID panel diagnostics\n' + DIAG_LINES.join('\n');
 }
 
 /* ---------- 13. Context + API host ---------- */
@@ -1743,6 +1778,8 @@ setTimeout(function () {
   console.info('[RAID panel] app host:', window.location.hostname,
     '| API base:', c.base, '| project (PlannedFor):', c.projId,
     '| session set:', !!c.sid);
+  diag('host ' + window.location.hostname + '  |  api ' + c.base);
+  diag('project ' + c.projId + '  |  session ' + (!!c.sid));
 
   showLoading('risks-body', 11);
   showLoading('issues-body', 9);
