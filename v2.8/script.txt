@@ -30,6 +30,12 @@ var CREATE_ISSUE_ACTION = 'Create Issue';
    create / edit / import. */
 var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
 
+/* Impact field API name on the RISK entity — DIFFERS from the panel's original
+   C_Impact. Confirmed on eu.clarizentb.com: Risk Impact field = C_ImpactR
+   (picklist class C_RiskImpactR). (Issue Impact is C_IssueImpact ->
+   C_IssueIssueImpact; Risk Probability is C_Likelihood -> C_RiskLikelihood.) */
+var RISK_IMPACT_FIELD = 'C_ImpactR';
+
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
@@ -38,7 +44,7 @@ var PICK = {};
 /* Authoritative picklist options fetched from AdaptiveWork metadata
    (field -> [{ raw, label }]). Preferred over guessing a "/Type" prefix. */
 var PICK_META = {};
-var PICK_FIELDS = ['C_Impact', 'C_Likelihood', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'C_ReportingLevelR', 'ActionItemState'];
+var PICK_FIELDS = ['C_Impact', 'C_ImpactR', 'C_Likelihood', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'C_ReportingLevelR', 'ActionItemState'];
 function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
@@ -115,6 +121,7 @@ function attachUserTypeahead(input, menu, onPick) {
    is unchanged — we still send the "/Type/Value" raw path. */
 var PICK_OPTIONS = {
   C_Impact:         ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
+  C_ImpactR:        ['1 Minor', '2 Moderate', '3 Moderate+', '4 Significant', '5 Significant+', '6 Severe'],
   C_IssueImpact:    ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
   C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel:  ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team'],
@@ -134,8 +141,8 @@ var PICK_OPTIONS = {
    (State / Priority / RequestType / ActionItemState are system enums, sourced
    from the loaded data instead, so they aren't listed here.) */
 var PICK_LIST_TYPES = {
-  C_Impact:          ['C_RiskImpact'],
-  C_Likelihood:      ['C_RiskProbability'],
+  C_ImpactR:         ['C_RiskImpactR'],
+  C_Likelihood:      ['C_RiskLikelihood'],
   C_IssueImpact:     ['C_IssueIssueImpact'],
   C_ReportingLevel:  ['C_IssueReportingLevel'],
   C_ReportingLevelR: ['C_RiskReportingLevelR']
@@ -360,7 +367,7 @@ function esc(s) {
 
 /* ---------- 4. Normalisers ---------- */
 function toRisk(e) {
-  var impRaw  = pickRaw(e.C_Impact);
+  var impRaw  = pickRaw(e[RISK_IMPACT_FIELD]);
   var probRaw = pickRaw(e.C_Likelihood);
   var rateRaw = pickRaw(e.C_RiskRating);
   var stRaw   = pickRaw(e.State);
@@ -699,7 +706,7 @@ function renderRisks(risks, actionMap) {
       '<td>' + idLink(r.rawId, r.sysId) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
-      editCell('C_Impact',         r.rawId, r.impactRaw,         esc(r.impact)) +
+      editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
       editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
@@ -770,7 +777,7 @@ function renderAll(risks, issues, requests, actionMap) {
   DATA = { risks: risks, issues: issues, requests: requests, actionMap: actionMap };
   PICK = {};
   risks.forEach(function (r) {
-    addPick('C_Impact', r.impactRaw);
+    addPick(RISK_IMPACT_FIELD, r.impactRaw);
     addPick('C_Likelihood', r.probabilityRaw);
     addPick('State', r.statusRaw);
     if (RISK_REPORTING_FIELD) addPick(RISK_REPORTING_FIELD, r.reportingLevelRaw);
@@ -1028,7 +1035,7 @@ var NEW_ROW_DEFS = {
       { type: 'static', html: '—' },                       /* ID (system-assigned) */
       { type: 'text',   field: 'Title', placeholder: 'Risk name' },
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
-      { type: 'pick',   field: 'C_Impact' },
+      { type: 'pick',   field: RISK_IMPACT_FIELD },
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
       { type: 'static', html: 'Opened' },                  /* new risks are always Opened */
       { type: 'user',   field: 'Owner' },
@@ -1279,7 +1286,7 @@ function commitEdit(cell) {
   updateField(id, field, newValue)
     .then(function () {
       /* Impact/Probability drive the computed Score — reload to refresh it. */
-      if (field === 'C_Impact' || field === 'C_Likelihood' || field === 'C_IssueImpact') { location.reload(); return; }
+      if (field === RISK_IMPACT_FIELD || field === 'C_Likelihood' || field === 'C_IssueImpact') { location.reload(); return; }
       cell.setAttribute('data-value', newValue);
       cell.classList.remove('saving');
       cell.innerHTML = cellDisplay(field, newValue);
@@ -1567,7 +1574,7 @@ var IMPORT_CFG = {
     fields: [
       { hdr: 'Risk name',       api: 'Title',            kind: 'text' },
       { hdr: 'Probability',     api: 'C_Likelihood',     kind: 'pick' },
-      { hdr: 'Impact',          api: 'C_Impact',         kind: 'pick' },
+      { hdr: 'Impact',          api: 'C_ImpactR',        kind: 'pick' },
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
       { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
@@ -1612,7 +1619,7 @@ function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
   if (entityType === 'Risk') {
     if (api === 'C_Likelihood')     return rec.probabilityRaw;
-    if (api === 'C_Impact')         return rec.impactRaw;
+    if (api === RISK_IMPACT_FIELD)  return rec.impactRaw;
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
     if (RISK_REPORTING_FIELD && api === RISK_REPORTING_FIELD) return rec.reportingLevelRaw;
@@ -1825,7 +1832,7 @@ setTimeout(function () {
   });
 
   var qRisks =
-    "SELECT SYSID, Title, C_Likelihood, C_Impact, C_RiskRating, State, Owner.Name, " +
+    "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
     "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
