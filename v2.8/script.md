@@ -137,18 +137,17 @@ var PICK_OPTIONS = {
    read the current environment's real options with a plain query against the
    picklist type (its "Class API Name"). Each row's id is the exact "/Type/Value"
    path to save; its Name is the label. Map: field -> CANDIDATE type entity names
-   (tried in order; first one that exists + returns values wins). The tenant's
-   real "Class API Name" can differ, so we list the likely aliases and let the
-   loader discover which is valid. Confirmed on eu.clarizentb.com: C_RiskImpact,
-   C_RiskProbability. Issue Impact / Reporting Level types differ here — the
-   loader probes the alternatives and the on-screen diagnostics report the hit.
+   (tried in order; first one that exists + returns values wins).
+   All four confirmed from the field's "Class API Name" on eu.clarizentb.com:
+     C_Impact -> C_RiskImpact, C_Likelihood -> C_RiskProbability,
+     C_IssueImpact -> C_IssueIssueImpact, C_ReportingLevel -> C_IssueReportingLevel.
    (State / Priority / RequestType / ActionItemState are system enums, sourced
    from the loaded data instead, so they aren't listed here.) */
 var PICK_LIST_TYPES = {
   C_Impact:         ['C_RiskImpact'],
   C_Likelihood:     ['C_RiskProbability'],
-  C_IssueImpact:    ['C_IssueImpact', 'C_RiskImpact', 'C_Impact'],
-  C_ReportingLevel: ['C_CaseReportingLevel', 'C_ReportingLevel', 'C_RiskReportingLevel', 'C_IssueReportingLevel']
+  C_IssueImpact:    ['C_IssueIssueImpact'],
+  C_ReportingLevel: ['C_IssueReportingLevel']
 };
 
 /* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
