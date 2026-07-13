@@ -24,8 +24,10 @@ function isShownRiskState(label) {
 var RISK_STATE_OPTIONS = ['Open', 'Closed'];
 
 /* Selectable states when editing an ActionItem; new actions default to Open.
-   Same treatment as risk Status — only these are offered, current value kept. */
-var ACTION_STATE_OPTIONS = ['Open', 'Closed'];
+   This tenant's ActionItemState enum is Open / Completed / Cancelled /
+   In-Progress / Rejected — it has NO "Closed", so the done state is Completed.
+   Only these two are offered (current value kept if it's another state). */
+var ACTION_STATE_OPTIONS = ['Open', 'Completed'];
 
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
