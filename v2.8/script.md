@@ -1395,6 +1395,7 @@ var NEW_ROW_DEFS = {
     tbody: 'risks-body', label: 'risk',
     cells: [
       { type: 'static', html: '—' },                       /* ID (system-assigned) */
+      { type: 'static', html: '' },                        /* Description (icon appears once saved) */
       { type: 'text',   field: 'Title', placeholder: 'Risk name' },
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
       { type: 'pick',   field: RISK_IMPACT_FIELD },
@@ -1409,6 +1410,7 @@ var NEW_ROW_DEFS = {
     tbody: 'issues-body', label: 'issue',
     cells: [
       { type: 'static', html: '—' },                       /* ID (system-assigned) */
+      { type: 'static', html: '' },                        /* Description (icon appears once saved) */
       { type: 'text',   field: 'Title', placeholder: 'Issue name' },
       { type: 'pick',   field: 'C_IssueImpact' },
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
@@ -1423,6 +1425,7 @@ var NEW_ROW_DEFS = {
     tbody: 'requests-body', label: 'change request',
     cells: [
       { type: 'static', html: '—' },                       /* ID (system-assigned) */
+      { type: 'static', html: '' },                        /* Description (icon appears once saved) */
       { type: 'text',   field: 'Title', placeholder: 'Change request name' },
       { type: 'pick',   field: 'State' },
       { type: 'static', html: '—' },
