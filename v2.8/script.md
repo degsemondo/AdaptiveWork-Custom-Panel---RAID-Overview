@@ -117,13 +117,25 @@ function loadCurrentUser() {
     return fetch(url, { headers: { 'Authorization': 'Session ' + c.sid } })
       .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
       .then(function (j) {
+        /* DIAGNOSTIC: show the raw shape so we use the right id/name fields. */
+        diag('getSessionInfo ok [' + paths[i] + ']: ' + JSON.stringify(j).slice(0, 300));
         var uid = j.userId || j.UserId || (j.user && (j.user.id || j.user.Id)) ||
                   (j.sessionInfo && (j.sessionInfo.userId || j.sessionInfo.UserId)) || '';
         if (!uid) throw new Error('no userId in response');
+        /* If the response carries the user's display name, use it directly and
+           skip the per-user object lookup. */
+        var directName = j.userName || j.UserName || j.name || j.Name ||
+                         (j.user && (j.user.Name || j.user.name)) || '';
         /* getSessionInfo returns a bare GUID; the object path + Owner reference
            both need the full "/User/<id>" form. */
         if (String(uid).charAt(0) !== '/') uid = '/User/' + uid;
         CURRENT_USER.id = uid;
+        if (directName) {
+          CURRENT_USER.name = directName;
+          rememberUser(uid, directName);
+          diag('current user: ' + directName + '  (' + uid + ')');
+          return;
+        }
         return fetchUserName(c.base, c.sid, uid).then(function (name) {
           CURRENT_USER.name = name;
           rememberUser(uid, name);
