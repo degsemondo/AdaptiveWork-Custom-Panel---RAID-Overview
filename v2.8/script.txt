@@ -23,6 +23,10 @@ function isShownRiskState(label) {
    derived from the environment's own State prefix (e.g. /CaseState/Closed). */
 var RISK_STATE_OPTIONS = ['Open', 'Closed'];
 
+/* Selectable states when editing an ActionItem; new actions default to Open.
+   Same treatment as risk Status — only these are offered, current value kept. */
+var ACTION_STATE_OPTIONS = ['Open', 'Closed'];
+
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
    this one string. */
@@ -50,6 +54,10 @@ var ISSUE_IMPACTDATE_FIELD = 'C_IssueImpactDate';
 
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
+
+/* True until the first successful render — gates one-time diagnostics so a
+   soft refresh (loadAndRender) doesn't keep appending to the diagnostics box. */
+var FIRST_RENDER = true;
 
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
@@ -275,12 +283,14 @@ function pickOptionsHtml(field, current, includeBlank) {
   }).join('');
 }
 
-/* Resolve a Risk Status label to its real "/Type/Value" path. Prefer a value
-   already present in this environment (metadata/data); otherwise derive it from
-   the State prefix the environment itself uses — so "Closed" becomes
-   /CaseState/Closed when the tenant's states live under /CaseState/. */
-function statePrefix() {
-  var lists = [PICK_META.State, PICK.State];
+/* Restrict a picklist to a fixed set of labels (e.g. a Risk's Status to
+   Open/Closed). Prefer a value already present in this environment
+   (metadata/data); otherwise derive the path from the prefix the environment
+   itself uses for that field — so "Closed" becomes /CaseState/Closed when the
+   tenant's states live under /CaseState/. `fallback` is used only if no existing
+   value reveals the prefix. */
+function fieldPrefix(field, fallback) {
+  var lists = [PICK_META[field], PICK[field]];
   for (var li = 0; li < lists.length; li++) {
     var list = lists[li] || [];
     for (var i = 0; i < list.length; i++) {
@@ -288,28 +298,38 @@ function statePrefix() {
       if (raw && String(raw).charAt(0) === '/') { var p = String(raw).split('/'); p.pop(); return p.join('/') + '/'; }
     }
   }
-  return '/CaseState/';
+  return fallback;
 }
-function stateRawForLabel(label) {
-  return pickRawByLabel('State', [label]) || (statePrefix() + label);
+function rawForLabel(field, label, fallback) {
+  return pickRawByLabel(field, [label]) || (fieldPrefix(field, fallback) + label);
 }
-/* Option list for a Risk's inline Status dropdown — RISK_STATE_OPTIONS only,
-   plus the row's current value if it isn't one of them (so an existing Draft /
-   Realised risk still shows and can be moved to Open / Closed). */
-function riskStateOptionList(current) {
+/* Options limited to `labels`, plus the row's current value if it isn't one of
+   them (so an existing legacy value still shows and can be changed). */
+function restrictedOptionList(field, labels, fallback, current) {
   var out = [], seen = {};
-  RISK_STATE_OPTIONS.forEach(function (lbl) {
-    var raw = stateRawForLabel(lbl);
+  labels.forEach(function (lbl) {
+    var raw = rawForLabel(field, lbl, fallback);
     if (raw && !seen[raw]) { seen[raw] = 1; out.push({ raw: raw, label: lbl }); }
   });
   if (current && !seen[current]) out.push({ raw: current, label: cleanLabel(current) });
   return out;
 }
-function riskStateOptionsHtml(current, includeBlank) {
+function restrictedOptionsHtml(field, labels, fallback, current, includeBlank) {
   var html = includeBlank ? '<option value="">—</option>' : '';
-  return html + riskStateOptionList(current).map(function (o) {
+  return html + restrictedOptionList(field, labels, fallback, current).map(function (o) {
     return '<option value="' + esc(o.raw) + '"' + (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
   }).join('');
+}
+/* Risk Status dropdown (Open / Closed). */
+function riskStateOptionsHtml(current, includeBlank) {
+  return restrictedOptionsHtml('State', RISK_STATE_OPTIONS, '/CaseState/', current, includeBlank);
+}
+/* ActionItem status dropdown (Open / Closed) + the raw path for a given label. */
+function actionStateOptionsHtml(current, includeBlank) {
+  return restrictedOptionsHtml('ActionItemState', ACTION_STATE_OPTIONS, '/ActionItemState/', current, includeBlank);
+}
+function actionStateRaw(label) {
+  return rawForLabel('ActionItemState', label, '/ActionItemState/');
 }
 
 /* ---------- 1b. Picklist options from metadata ----------
@@ -538,7 +558,7 @@ function toAction(e) {
   var today  = new Date();
   var due    = e.DueDate ? new Date(e.DueDate) : null;
   var stateV = cleanLabel(extractPicklistValue(e.ActionItemState));
-  var isDone = stateV === 'Complete' || stateV === 'Completed';
+  var isDone = /^(complete|completed|closed|done)$/i.test(stateV);
   var isLate = !isDone && due && due < today;
   var statusLabel = isDone ? 'Completed'
                  : isLate  ? 'Overdue'
@@ -624,9 +644,10 @@ function riskRatingHeatMap(val) {
 function actionStatusInfo(stateRaw, dueIso) {
   var due = dueIso ? new Date(dueIso) : null;
   var stateV = cleanLabel(stateRaw);
-  var isDone = stateV === 'Complete' || stateV === 'Completed';
+  var isDone = /^(complete|completed|closed|done)$/i.test(stateV);
   var isLate = !isDone && due && due < new Date();
-  var label = isDone ? 'Completed'
+  /* When done, the Status pill already says so — no due/overdue text. */
+  var label = isDone ? ''
             : isLate  ? 'Overdue'
             : due     ? 'Due ' + fmtDate(dueIso)
             :           'No due date';
@@ -643,7 +664,7 @@ function actionInnerHtml(name, ownerName, stateRaw, dueIso) {
     '<span class="action-name">' + esc(name) + '</span>' +
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
     statePill +
-    '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' +
+    (s.label ? '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' : '') +
     '<span class="action-tools">' +
       '<button class="act-edit" title="Edit action" aria-label="Edit action"><i class="ti ti-pencil" aria-hidden="true"></i></button>' +
       '<button class="act-del" title="Delete action" aria-label="Delete action"><i class="ti ti-trash" aria-hidden="true"></i></button>' +
@@ -671,7 +692,7 @@ function actionFormHtml(a) {
       ' data-user-id="' + esc(a.ownerRaw || '') + '" value="' + esc(ownerName) + '" placeholder="Owner" />' +
       '<div class="ta-menu" style="display:none"></div></span>' +
     '<input type="date" class="edit-input act-f-due" value="' + ((a.dueDate || '').split('T')[0]) + '" />' +
-    '<select class="edit-input act-f-state">' + pickOptionsHtml('ActionItemState', a.stateRaw || '', true) + '</select>' +
+    '<select class="edit-input act-f-state">' + actionStateOptionsHtml(a.stateRaw || '', false) + '</select>' +
     '<button class="act-save">Save</button>' +
     '<button class="act-cancel">Cancel</button>' +
     '</div>';
@@ -720,7 +741,13 @@ function addActionRow(addBtn) {
   el.className = 'action-item';
   el.setAttribute('data-action-id', '');
   el.setAttribute('data-parent', block.getAttribute('data-parent') || '');
-  el.innerHTML = actionFormHtml({});
+  /* New actions default to: Owner = signed-in user, Due = today, State = Open. */
+  el.innerHTML = actionFormHtml({
+    ownerRaw: CURRENT_USER.id,
+    assignee: CURRENT_USER.name,
+    dueDate:  todayISO(),
+    stateRaw: actionStateRaw('Open')
+  });
   block.appendChild(el);
   var ta = el.querySelector('.ta-input');
   if (ta) attachUserTypeahead(ta, el.querySelector('.ta-menu'));
@@ -756,7 +783,7 @@ function saveAction(el) {
     fields.Container = el.getAttribute('data-parent') || '';
     p = createObject(c.base, c.sid, 'ActionItem', fields);
   }
-  p.then(function () { location.reload(); })
+  p.then(function () { return loadAndRender(); })
    .catch(function (err) {
      alert('Failed to save action: ' + err.message);
      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
@@ -770,7 +797,7 @@ function deleteAction(el) {
   var c;
   try { c = getContext(); } catch (e) { alert('Cannot delete action: ' + e.message); return; }
   deleteObject(c.base, c.sid, actionId)
-    .then(function () { location.reload(); })
+    .then(function () { return loadAndRender(); })
     .catch(function (err) { alert('Failed to delete action: ' + err.message); });
 }
 
@@ -811,6 +838,16 @@ function idLink(rawId, sysId) {
     'title="Open in AdaptiveWork">' + label + '</a>';
 }
 
+/* Small count badge shown on a record row when it has associated actions, so
+   users can see there are items to expand. Inline-styled (no CSS-field change). */
+function actionBadge(n) {
+  if (!n) return '';
+  return ' <span class="action-badge" title="' + n + ' associated action' + (n === 1 ? '' : 's') + '"' +
+    ' style="display:inline-block;min-width:16px;height:16px;line-height:16px;padding:0 5px;' +
+    'border-radius:8px;background:#8B3A62;color:#fff;font-size:10px;font-weight:600;' +
+    'text-align:center;vertical-align:middle;">' + n + '</span>';
+}
+
 /* ---------- 11. Renderers ---------- */
 function renderRisks(risks, actionMap) {
   var tbody = document.getElementById('risks-body');
@@ -824,7 +861,7 @@ function renderRisks(risks, actionMap) {
     var hm = riskRatingHeatMap(r.riskRating);
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(r.rawId, r.sysId) + '</td>' +
+      '<td>' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
@@ -856,7 +893,7 @@ function renderIssues(issues, actionMap) {
     var hm = riskRatingHeatMap(issue.score);
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(issue.rawId, issue.sysId) + '</td>' +
+      '<td>' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',            issue.rawId, issue.name,              esc(issue.name)) +
       editCell('C_IssueImpact',    issue.rawId, issue.impactRaw,         esc(issue.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(issue.score) + '</span></td>' +
@@ -883,7 +920,7 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(req.rawId, req.sysId) + '</td>' +
+      '<td>' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
@@ -918,18 +955,22 @@ function renderAll(risks, issues, requests, actionMap) {
   Object.keys(actionMap || {}).forEach(function (pid) {
     actionMap[pid].forEach(function (a) { addPick('ActionItemState', a.stateRaw); });
   });
-  /* DIAGNOSTIC: can we resolve the Risk "Open" State path for create? */
-  diag('create State "Open" -> ' + (pickRawByLabel('State', ['Open']) || '(not resolvable)'));
+  /* DIAGNOSTIC (first render only, so soft refreshes don't grow the box):
+     resolve the Risk "Open" path + sample raw values. */
+  if (FIRST_RENDER) {
+    diag('create State "Open" -> ' + (pickRawByLabel('State', ['Open']) || '(not resolvable)'));
+  }
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
 
-  /* DIAGNOSTIC: show the exact value format an existing record already stores,
-     so we can match the create/save payload to what each field really expects. */
-  if (risks[0]) diag('sample Risk raw: prob=' + (risks[0].probabilityRaw || '(empty)') +
-    '  impact=' + (risks[0].impactRaw || '(empty)') + '  reporting=' + (risks[0].reportingLevelRaw || '(empty)'));
-  if (issues[0]) diag('sample Issue raw: impact=' + (issues[0].impactRaw || '(empty)') +
-    '  reporting=' + (issues[0].reportingLevelRaw || '(empty)'));
+  if (FIRST_RENDER) {
+    if (risks[0]) diag('sample Risk raw: prob=' + (risks[0].probabilityRaw || '(empty)') +
+      '  impact=' + (risks[0].impactRaw || '(empty)') + '  reporting=' + (risks[0].reportingLevelRaw || '(empty)'));
+    if (issues[0]) diag('sample Issue raw: impact=' + (issues[0].impactRaw || '(empty)') +
+      '  reporting=' + (issues[0].reportingLevelRaw || '(empty)'));
+    FIRST_RENDER = false;
+  }
 }
 
 /* ---------- 12. Loading / error helpers ---------- */
@@ -1102,7 +1143,7 @@ function runCreateIssue(cell) {
   cell.innerHTML = '<span class="row-action" title="Creating Issue…"><i class="ti ti-loader-2 spin" aria-hidden="true"></i></span>';
   executeCustomAction(c.base, c.sid, id, CREATE_ISSUE_ACTION)
     .then(function () { return completeRiskActions(c, id); })
-    .then(function () { location.reload(); })
+    .then(function () { return loadAndRender(); })
     .catch(function (err) {
       console.error('Create Issue failed:', err);
       cell.innerHTML = '<button class="row-action create-issue ci-error" title="Create Issue failed: ' +
@@ -1117,8 +1158,9 @@ function runCreateIssue(cell) {
 function completeRiskActions(c, riskId) {
   var actions = (DATA.actionMap && DATA.actionMap[riskId]) || [];
   if (!actions.length) return Promise.resolve();
-  var doneRaw = pickRawByLabel('ActionItemState', ['Completed', 'Complete']);
-  if (!doneRaw) return Promise.resolve();   /* can't resolve a Completed value in this env */
+  /* Actions now use Open / Closed — mark them Closed (fall back to legacy done
+     labels if that's what the tenant uses). */
+  var doneRaw = pickRawByLabel('ActionItemState', ['Closed', 'Completed', 'Complete', 'Done']) || actionStateRaw('Closed');
   var doneLbl = cleanLabel(doneRaw).toLowerCase();
   return Promise.all(actions.map(function (a) {
     if (cleanLabel(a.stateRaw).toLowerCase() === doneLbl) return true;   /* already complete */
@@ -1143,9 +1185,9 @@ function createEntity(entityType, fields, label) {
   return createObject(c.base, c.sid, entityType, fields)
     .then(function (res) {
       var caseId = res && res.id;
-      if (!caseId) { location.reload(); return; }   /* no id returned — nothing to link */
+      if (!caseId) { return loadAndRender(); }   /* no id returned — nothing to link */
       return linkToProject(c.base, c.sid, caseId, c.projId)
-        .then(function () { location.reload(); });
+        .then(function () { return loadAndRender(); });
     })
     .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); throw err; });
 }
@@ -1426,8 +1468,8 @@ function commitEdit(cell) {
 
   updateField(id, field, newValue)
     .then(function () {
-      /* Impact/Probability drive the computed Score — reload to refresh it. */
-      if (field === RISK_IMPACT_FIELD || field === 'C_Likelihood' || field === 'C_IssueImpact') { location.reload(); return; }
+      /* Impact/Probability drive the computed Score — soft-refresh to pick it up. */
+      if (field === RISK_IMPACT_FIELD || field === 'C_Likelihood' || field === 'C_IssueImpact') { loadAndRender(); return; }
       cell.setAttribute('data-value', newValue);
       cell.classList.remove('saving');
       cell.innerHTML = cellDisplay(field, newValue);
@@ -1943,11 +1985,93 @@ function executeImport(ops) {
   Promise.all(jobs).then(function (results) {
     var failed = results.filter(function (ok) { return !ok; }).length;
     if (failed) alert(failed + ' of ' + results.length + ' operation(s) failed; the rest were applied.');
-    location.reload();
+    loadAndRender();
   });
 }
 
-/* ---------- 18. Bootstrap ---------- */
+/* ---------- 18. Load + render ----------
+   Queries all three entities (+ their actions) and repaints the tables in place.
+   Used for the initial load AND as a "soft refresh" after any change — replacing
+   the old location.reload(), so there's no full-page reload: the active tab and
+   scroll position are preserved and there's no white flash. Returns the promise. */
+function loadAndRender() {
+  var c;
+  try {
+    c = getContext();
+  } catch (e) {
+    showError('risks-body', 11, e.message);
+    showError('issues-body', 9, e.message);
+    showError('requests-body', 7, e.message);
+    return Promise.reject(e);
+  }
+
+  var qRisks =
+    "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
+    (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
+    "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
+  var qIssues =
+    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel" +
+    (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
+    " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
+  var qRequests =
+    "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
+    "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
+
+  return Promise.all([
+    czql(c.base, c.sid, qRisks),
+    czql(c.base, c.sid, qIssues),
+    czql(c.base, c.sid, qRequests)
+  ])
+  .then(function (results) {
+    /* Risks tab shows only the displayed states (hide Realised, etc.). */
+    var riskRows = results[0].filter(function (e) {
+      return isShownRiskState(cleanLabel(pickRaw(e.State)));
+    });
+    var risks    = riskRows.map(toRisk);
+    /* DIAGNOSTIC (first render only): how many risks came back vs shown + States. */
+    if (FIRST_RENDER) {
+      var seenStates = {};
+      results[0].forEach(function (e) { var s = cleanLabel(pickRaw(e.State)) || '(blank)'; seenStates[s] = (seenStates[s] || 0) + 1; });
+      diag('risks: ' + results[0].length + ' returned, ' + riskRows.length + ' shown (filter ' + RISK_STATES.join('/') + ')');
+      diag('risk States seen: ' + (Object.keys(seenStates).map(function (k) { return k + '×' + seenStates[k]; }).join(', ') || 'none'));
+    }
+    var issues   = results[1].map(toIssue);
+    /* Requests tab shows Change Requests only (RequestType = 'Change Request'). */
+    var reqRows  = results[2].filter(function (e) {
+      return cleanLabel(pickRaw(e.RequestType) || pickRaw(e.Type)).toLowerCase() === 'change request';
+    });
+    var requests = reqRows.map(toRequest);
+
+    var caseIds = []
+      .concat(riskRows.map(function (e) { return e.id; }))
+      .concat(results[1].map(function (e) { return e.id; }))
+      .concat(reqRows.map(function (e) { return e.id; }));
+
+    if (!caseIds.length) {
+      renderAll(risks, issues, requests, {});
+      return;
+    }
+
+    var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
+    var qActions =
+      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, Container.id " +
+      "FROM ActionItem WHERE Container IN (" + inList + ")";
+
+    return czql(c.base, c.sid, qActions).then(function (actionEntities) {
+      var actionMap = buildActionMap(actionEntities.map(toAction));
+      renderAll(risks, issues, requests, actionMap);
+    });
+  })
+  .catch(function (err) {
+    console.error('AdaptiveWork panel fetch error:', err);
+    var msg = 'Failed to load data: ' + err.message;
+    showError('risks-body', 11, msg);
+    showError('issues-body', 9, msg);
+    showError('requests-body', 7, msg);
+  });
+}
+
+/* ---------- 19. Bootstrap ---------- */
 setTimeout(function () {
   initUI();
 
@@ -1986,66 +2110,5 @@ setTimeout(function () {
     console.warn('Current user unavailable:', err && err.message);
   });
 
-  var qRisks =
-    "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
-    (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
-    "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
-  var qIssues =
-    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel" +
-    (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
-    " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
-  var qRequests =
-    "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
-    "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
-
-  Promise.all([
-    czql(c.base, c.sid, qRisks),
-    czql(c.base, c.sid, qIssues),
-    czql(c.base, c.sid, qRequests)
-  ])
-  .then(function (results) {
-    /* Risks tab shows only the Opened / Closed states (hide Realised, etc.). */
-    var riskRows = results[0].filter(function (e) {
-      return isShownRiskState(cleanLabel(pickRaw(e.State)));
-    });
-    var risks    = riskRows.map(toRisk);
-    /* DIAGNOSTIC: how many risks came back vs shown, and their distinct States. */
-    var seenStates = {};
-    results[0].forEach(function (e) { var s = cleanLabel(pickRaw(e.State)) || '(blank)'; seenStates[s] = (seenStates[s] || 0) + 1; });
-    diag('risks: ' + results[0].length + ' returned, ' + riskRows.length + ' shown (filter ' + RISK_STATES.join('/') + ')');
-    diag('risk States seen: ' + (Object.keys(seenStates).map(function (k) { return k + '×' + seenStates[k]; }).join(', ') || 'none'));
-    var issues   = results[1].map(toIssue);
-    /* Requests tab shows Change Requests only (RequestType = 'Change Request'). */
-    var reqRows  = results[2].filter(function (e) {
-      return cleanLabel(pickRaw(e.RequestType) || pickRaw(e.Type)).toLowerCase() === 'change request';
-    });
-    var requests = reqRows.map(toRequest);
-
-    var caseIds = []
-      .concat(riskRows.map(function (e) { return e.id; }))
-      .concat(results[1].map(function (e) { return e.id; }))
-      .concat(reqRows.map(function (e) { return e.id; }));
-
-    if (!caseIds.length) {
-      renderAll(risks, issues, requests, {});
-      return;
-    }
-
-    var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
-    var qActions =
-      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, Container.id " +
-      "FROM ActionItem WHERE Container IN (" + inList + ")";
-
-    return czql(c.base, c.sid, qActions).then(function (actionEntities) {
-      var actionMap = buildActionMap(actionEntities.map(toAction));
-      renderAll(risks, issues, requests, actionMap);
-    });
-  })
-  .catch(function (err) {
-    console.error('AdaptiveWork panel fetch error:', err);
-    var msg = 'Failed to load data: ' + err.message;
-    showError('risks-body', 11, msg);
-    showError('issues-body', 9, msg);
-    showError('requests-body', 7, msg);
-  });
+  loadAndRender();
 }, 100);
