@@ -33,7 +33,7 @@ var API_CUSTOMACT = '/V2.0/services/data/executeCustomAction';
 
 /* Risks tab shows only these lifecycle states (others, e.g. Realised, are
    hidden — a Risk becomes Realised once converted to an Issue). */
-var RISK_STATES = ['Opened', 'Closed'];
+var RISK_STATES = ['Draft', 'Open'];
 function isShownRiskState(label) {
   return RISK_STATES.some(function (s) { return s.toLowerCase() === String(label || '').toLowerCase(); });
 }
@@ -517,7 +517,7 @@ var PILL_MAP = {
   Critical: 'pill-critical', High: 'pill-high', Medium: 'pill-medium', Low: 'pill-low',
   Open: 'pill-open', Opened: 'pill-open', 'In progress': 'pill-inprog', Active: 'pill-inprog',
   Closed: 'pill-resolved', Resolved: 'pill-resolved', Complete: 'pill-resolved', Completed: 'pill-resolved',
-  Pending: 'pill-pending', New: 'pill-new', Submitted: 'pill-new',
+  Pending: 'pill-pending', New: 'pill-new', Draft: 'pill-new', Submitted: 'pill-new',
   Approved: 'pill-approved', Rejected: 'pill-rejected', Cancelled: 'pill-rejected', Realised: 'pill-critical'
 };
 function pill(label) {
@@ -1088,7 +1088,7 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
       { type: 'pick',   field: RISK_IMPACT_FIELD },
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
-      { type: 'static', html: 'Opened' },                  /* new risks are always Opened */
+      { type: 'static', html: 'Open' },                    /* new risks are always Open */
       { type: 'user',   field: 'Owner' },
       (RISK_REPORTING_FIELD ? { type: 'pick', field: RISK_REPORTING_FIELD } : { type: 'static', html: '—' }),
       { type: 'date',   field: 'C_ImpactDate', actions: true }
@@ -1209,10 +1209,10 @@ function saveNewRow(row) {
     var rt = changeRequestTypeRaw();
     if (rt) fields.RequestType = rt;
   }
-  /* New Risks are always created with State = Opened. */
+  /* New Risks are always created with State = Open. */
   if (entityType === 'Risk' && !fields.State) {
-    var opened = pickRawByLabel('State', ['Opened']);
-    if (opened) fields.State = opened;
+    var openState = pickRawByLabel('State', ['Open']);
+    if (openState) fields.State = openState;
   }
   if (!fields.Title) {
     alert('Please enter a name.');
