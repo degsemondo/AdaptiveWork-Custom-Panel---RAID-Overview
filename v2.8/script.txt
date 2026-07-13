@@ -534,6 +534,7 @@ function toRisk(e) {
     owner:             (e.Owner && e.Owner.Name) || '—',
     reportingLevelRaw: rlRaw,   reportingLevel: cleanLabel(rlRaw) || '—',
     impactDate:        e.C_ImpactDate || null,
+    description:       e.Description || '',
     rawId:             e.id || ''
   };
 }
@@ -554,6 +555,7 @@ function toIssue(e) {
     reportingLevelRaw: rlRaw,  reportingLevel: cleanLabel(rlRaw) || '—',
     impactDate:        ISSUE_IMPACTDATE_FIELD ? (e[ISSUE_IMPACTDATE_FIELD] || null) : null,
     dueDate:           e.DueDate || null,
+    description:       e.Description || '',
     rawId:             e.id || ''
   };
 }
@@ -570,6 +572,7 @@ function toRequest(e) {
     requestor:  (e.CreatedBy && e.CreatedBy.Name) || '—',
     submitted:  e.CreatedOn || null,
     decisionBy: e.DueDate || null,
+    description: e.Description || '',
     rawId:      e.id || ''
   };
 }
@@ -876,6 +879,18 @@ function actionBadge(n) {
     'text-align:center;vertical-align:middle;">' + n + '</span>';
 }
 
+/* Description icon for a record row — burgundy when the record has a Description,
+   faint when empty. Clicking opens a plain-textarea dialog to view/edit it
+   (Description is a Text Area field, so no rich-text handling needed). */
+function descIcon(rec) {
+  var has = !!(rec.description && String(rec.description).trim());
+  return ' <button class="desc-btn" data-id="' + esc(rec.rawId) + '"' +
+    ' title="' + (has ? 'View / edit description' : 'Add description') + '" aria-label="Description"' +
+    ' style="border:none;background:none;cursor:pointer;padding:0 0 0 3px;vertical-align:middle;line-height:1;color:' +
+    (has ? '#8B3A62' : '#c9ccd1') + ';">' +
+    '<i class="ti ti-file-text" style="font-size:14px" aria-hidden="true"></i></button>';
+}
+
 /* ---------- 11. Renderers ---------- */
 function renderRisks(risks, actionMap) {
   var tbody = document.getElementById('risks-body');
@@ -889,7 +904,7 @@ function renderRisks(risks, actionMap) {
     var hm = riskRatingHeatMap(r.riskRating);
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + descIcon(r) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
@@ -921,7 +936,7 @@ function renderIssues(issues, actionMap) {
     var hm = riskRatingHeatMap(issue.score);
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + descIcon(issue) + '</td>' +
       editCell('Title',            issue.rawId, issue.name,              esc(issue.name)) +
       editCell('C_IssueImpact',    issue.rawId, issue.impactRaw,         esc(issue.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(issue.score) + '</span></td>' +
@@ -949,7 +964,7 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + descIcon(req) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
@@ -1192,6 +1207,70 @@ function showConfirm(opts) {
   pop.querySelector('.aw-c-ok').addEventListener('click', go);
   positionPopover(pop, opts.anchor);
   var okBtn = pop.querySelector('.aw-c-ok'); if (okBtn) okBtn.focus();
+}
+
+/* Description editor — a plain textarea in a centered, non-dimming dialog (a
+   transparent click-catcher dismisses it, so the panel isn't greyed out).
+   Esc / outside-click / Cancel discards; Save commits. opts = { title, value, onSave }. */
+function showDescriptionDialog(opts) {
+  opts = opts || {};
+  var catcher = document.createElement('div');
+  catcher.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:transparent;';
+  var card = document.createElement('div');
+  card.style.cssText = 'position:fixed;z-index:2001;top:50%;left:50%;transform:translate(-50%,-50%);' +
+    'background:#fff;border:1px solid #dadce0;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,0.30);' +
+    'padding:16px 18px;width:92vw;max-width:460px;box-sizing:border-box;' +
+    'font:13px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#202124;';
+  card.innerHTML =
+    '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">' + esc(opts.title || 'Description') + '</div>' +
+    '<textarea class="aw-desc-input" rows="8" style="width:100%;min-height:150px;resize:vertical;' +
+      'box-sizing:border-box;padding:8px;border:1px solid #dadce0;border-radius:4px;font:inherit;color:inherit;"></textarea>' +
+    '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">' +
+      '<button class="aw-d-cancel" style="padding:6px 12px;border:1px solid #dadce0;background:#fff;color:#3c4043;border-radius:4px;cursor:pointer;font:inherit;">Cancel</button>' +
+      '<button class="aw-d-ok" style="padding:6px 12px;border:none;background:#8B3A62;color:#fff;border-radius:4px;cursor:pointer;font:inherit;">Save</button>' +
+    '</div>';
+  var ta = card.querySelector('.aw-desc-input');
+  ta.value = opts.value || '';   /* set via .value (not innerHTML) to keep text/newlines verbatim */
+  function close() {
+    if (card.parentNode) card.parentNode.removeChild(card);
+    if (catcher.parentNode) catcher.parentNode.removeChild(catcher);
+    document.removeEventListener('keydown', onKey, true);
+  }
+  function save() { var v = ta.value; close(); if (opts.onSave) opts.onSave(v); }
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }   /* Enter = newline in the textarea */
+  catcher.addEventListener('mousedown', close);
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(catcher);
+  document.body.appendChild(card);
+  card.querySelector('.aw-d-cancel').addEventListener('click', close);
+  card.querySelector('.aw-d-ok').addEventListener('click', save);
+  ta.focus();
+}
+/* Locate a loaded record (any tab) by its full rawId. */
+function findRecordByRawId(rawId) {
+  var lists = [DATA.risks, DATA.issues, DATA.requests];
+  for (var i = 0; i < lists.length; i++) {
+    var l = lists[i] || [];
+    for (var j = 0; j < l.length; j++) { if (l[j].rawId === rawId) return l[j]; }
+  }
+  return null;
+}
+/* Open the Description editor for a record; on save, POST Description + refresh. */
+function openDescription(rawId) {
+  var rec = findRecordByRawId(rawId);
+  if (!rec) return;
+  showDescriptionDialog({
+    title: 'Description — ' + (rec.name || ''),
+    value: rec.description || '',
+    onSave: function (text) {
+      if (String(text) === String(rec.description || '')) return;   /* unchanged */
+      var c;
+      try { c = getContext(); } catch (e) { alert('Cannot save description: ' + e.message); return; }
+      updateObject(c.base, c.sid, rec.rawId, { Description: text })
+        .then(function () { rec.description = text; return loadAndRender(); })
+        .catch(function (err) { alert('Failed to save description: ' + err.message); });
+    }
+  });
 }
 
 /* Row-level "Create Issue" action on a Risk — runs the custom action (which sets
@@ -1771,6 +1850,10 @@ function initUI() {
       var ci = e.target.closest('.create-issue');
       if (ci) { confirmCreateIssue(ci); return; }
 
+      /* Description icon — open the textarea editor */
+      var db = e.target.closest('.desc-btn');
+      if (db) { openDescription(db.getAttribute('data-id')); return; }
+
       var editable = e.target.closest('.editable');
       if (editable && !editable.classList.contains('editing')) { startEdit(editable); return; }
     });
@@ -2209,13 +2292,13 @@ function loadAndRender() {
   var qRisks =
     "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
-    "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
+    "C_ImpactDate, Description FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
-    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel, DueDate" +
+    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel, DueDate, Description" +
     (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
     " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
   var qRequests =
-    "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate " +
+    "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate, Description " +
     "FROM EnhancementRequest WHERE PlannedFor = '" + c.projId + "'";
 
   return Promise.all([
