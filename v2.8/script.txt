@@ -227,7 +227,8 @@ var PICK_LIST_TYPES = {
   C_Likelihood:      ['C_RiskLikelihood'],
   C_IssueImpact:     ['C_IssueIssueImpact'],
   C_ReportingLevel:  ['C_IssueReportingLevel'],
-  C_ReportingLevelR: ['C_RiskReportingLevelR']
+  C_ReportingLevelR: ['C_RiskReportingLevelR'],
+  ActionItemState:   ['ActionItemState']   /* discover the real action states */
 };
 
 /* Build [{ raw, label }] options for a picklist field — ENVIRONMENT-DRIVEN.
@@ -324,12 +325,27 @@ function restrictedOptionsHtml(field, labels, fallback, current, includeBlank) {
 function riskStateOptionsHtml(current, includeBlank) {
   return restrictedOptionsHtml('State', RISK_STATE_OPTIONS, '/CaseState/', current, includeBlank);
 }
-/* ActionItem status dropdown (Open / Closed) + the raw path for a given label. */
+/* ActionItem status dropdown. Offer Open / Closed ONLY IF the tenant's
+   ActionItemState enum actually has them (real values only — never fabricate a
+   path, which 500s with "Entity 'X' of type 'ActionItemState' was not found").
+   If it has neither, fall back to the enum's real values so the dropdown is
+   always saveable. */
 function actionStateOptionsHtml(current, includeBlank) {
-  return restrictedOptionsHtml('ActionItemState', ACTION_STATE_OPTIONS, '/ActionItemState/', current, includeBlank);
+  var out = [], seen = {};
+  ACTION_STATE_OPTIONS.forEach(function (lbl) {
+    var raw = pickRawByLabel('ActionItemState', [lbl]);
+    if (raw && !seen[raw]) { seen[raw] = 1; out.push({ raw: raw, label: lbl }); }
+  });
+  if (!out.length) return pickOptionsHtml('ActionItemState', current, includeBlank);
+  if (current && !seen[current]) out.push({ raw: current, label: cleanLabel(current) });
+  var html = includeBlank ? '<option value="">—</option>' : '';
+  return html + out.map(function (o) {
+    return '<option value="' + esc(o.raw) + '"' + (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+  }).join('');
 }
+/* Real ActionItemState path for a label, or '' if the enum doesn't have it. */
 function actionStateRaw(label) {
-  return rawForLabel('ActionItemState', label, '/ActionItemState/');
+  return pickRawByLabel('ActionItemState', [label]);
 }
 
 /* ---------- 1b. Picklist options from metadata ----------
@@ -969,6 +985,10 @@ function renderAll(risks, issues, requests, actionMap) {
       '  impact=' + (risks[0].impactRaw || '(empty)') + '  reporting=' + (risks[0].reportingLevelRaw || '(empty)'));
     if (issues[0]) diag('sample Issue raw: impact=' + (issues[0].impactRaw || '(empty)') +
       '  reporting=' + (issues[0].reportingLevelRaw || '(empty)'));
+    var ais = (PICK_META.ActionItemState && PICK_META.ActionItemState.length)
+      ? PICK_META.ActionItemState.map(function (o) { return o.label || cleanLabel(o.raw); })
+      : (PICK.ActionItemState || []).map(function (r) { return cleanLabel(r); });
+    diag('ActionItemState values: ' + (ais.join(', ') || '(none yet — enum query pending)'));
     FIRST_RENDER = false;
   }
 }
@@ -1158,9 +1178,10 @@ function runCreateIssue(cell) {
 function completeRiskActions(c, riskId) {
   var actions = (DATA.actionMap && DATA.actionMap[riskId]) || [];
   if (!actions.length) return Promise.resolve();
-  /* Actions now use Open / Closed — mark them Closed (fall back to legacy done
-     labels if that's what the tenant uses). */
-  var doneRaw = pickRawByLabel('ActionItemState', ['Closed', 'Completed', 'Complete', 'Done']) || actionStateRaw('Closed');
+  /* Mark actions done using whichever done-state the tenant actually has
+     (real values only — no fabricated path). */
+  var doneRaw = pickRawByLabel('ActionItemState', ['Closed', 'Completed', 'Complete', 'Done']);
+  if (!doneRaw) return Promise.resolve();   /* no resolvable done-state in this env */
   var doneLbl = cleanLabel(doneRaw).toLowerCase();
   return Promise.all(actions.map(function (a) {
     if (cleanLabel(a.stateRaw).toLowerCase() === doneLbl) return true;   /* already complete */
