@@ -884,7 +884,7 @@ function actionBadge(n) {
    (Description is a Text Area field, so no rich-text handling needed). */
 function descIcon(rec) {
   var has = !!(rec.description && String(rec.description).trim());
-  return ' <button class="desc-btn" data-id="' + esc(rec.rawId) + '"' +
+  return '<button class="desc-btn" data-id="' + esc(rec.rawId) + '"' +
     ' title="' + (has ? 'View / edit description' : 'Add description') + '" aria-label="Description"' +
     ' style="border:none;background:none;cursor:pointer;padding:0 0 0 3px;vertical-align:middle;line-height:1;color:' +
     (has ? '#8B3A62' : '#c9ccd1') + ';">' +
@@ -895,7 +895,7 @@ function descIcon(rec) {
 function renderRisks(risks, actionMap) {
   var tbody = document.getElementById('risks-body');
   if (!risks.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="no-data">No risks found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12"><div class="no-data">No risks found for this project.</div></td></tr>';
     document.getElementById('badge-risks').textContent = '0';
     return;
   }
@@ -904,7 +904,8 @@ function renderRisks(risks, actionMap) {
     var hm = riskRatingHeatMap(r.riskRating);
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + descIcon(r) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="text-align:center">' + descIcon(r) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
@@ -919,7 +920,7 @@ function renderRisks(risks, actionMap) {
         createIssueButtonHtml() +
       '</td>' +
       '</tr>' +
-      '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="11">' + actionsBlock(actions, r.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="12">' + actionsBlock(actions, r.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-risks').textContent = risks.length;
 }
@@ -927,7 +928,7 @@ function renderRisks(risks, actionMap) {
 function renderIssues(issues, actionMap) {
   var tbody = document.getElementById('issues-body');
   if (!issues.length) {
-    tbody.innerHTML = '<tr><td colspan="10"><div class="no-data">No issues found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="no-data">No issues found for this project.</div></td></tr>';
     document.getElementById('badge-issues').textContent = '0';
     return;
   }
@@ -936,7 +937,8 @@ function renderIssues(issues, actionMap) {
     var hm = riskRatingHeatMap(issue.score);
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + descIcon(issue) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="text-align:center">' + descIcon(issue) + '</td>' +
       editCell('Title',            issue.rawId, issue.name,              esc(issue.name)) +
       editCell('C_IssueImpact',    issue.rawId, issue.impactRaw,         esc(issue.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(issue.score) + '</span></td>' +
@@ -948,7 +950,7 @@ function renderIssues(issues, actionMap) {
         : '<td><span class="action-due">' + fmtDate(issue.impactDate) + '</span></td>') +
       editCell('DueDate',          issue.rawId, issue.dueDate || '', '<span class="action-due ' + dueCls(issue.dueDate) + '">' + fmtDate(issue.dueDate) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="10">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="11">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-issues').textContent = issues.length;
 }
@@ -956,7 +958,7 @@ function renderIssues(issues, actionMap) {
 function renderRequests(requests, actionMap) {
   var tbody = document.getElementById('requests-body');
   if (!requests.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data">No change requests found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data">No change requests found for this project.</div></td></tr>';
     document.getElementById('badge-requests').textContent = '0';
     return;
   }
@@ -964,14 +966,15 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td style="white-space:nowrap">' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + descIcon(req) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="text-align:center">' + descIcon(req) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
       '<td>' + fmtDate(req.submitted) + '</td>' +
       editCell('DueDate',     req.rawId, req.decisionBy || '', '<span class="action-due ' + dueCls(req.decisionBy) + '">' + fmtDate(req.decisionBy) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="7">' + actionsBlock(actions, req.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + req.id + '-actions"><td colspan="8">' + actionsBlock(actions, req.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-requests').textContent = requests.length;
 }
@@ -1657,17 +1660,20 @@ function commitEdit(cell) {
     });
 }
 
-/* ---------- 16. Filtering ---------- */
-function filterTable(tbodyId, query) {
-  var q = query.toLowerCase();
-  document.querySelectorAll('#' + tbodyId + ' .data-row').forEach(function (row) {
-    row.style.display = row.innerText.toLowerCase().indexOf(q) > -1 ? '' : 'none';
-  });
-}
-function filterByStatus(tbodyId, val) {
-  document.querySelectorAll('#' + tbodyId + ' .data-row').forEach(function (row) {
-    var v = row.getAttribute('data-status') || '';
-    row.style.display = (!val || v === val) ? '' : 'none';
+/* ---------- 16. Filtering ----------
+   Search text AND the status dropdown combine (a row must match both). Re-applied
+   after a sort re-render so an active filter isn't lost. */
+function reapplyFilters(tab) {
+  var cfg = TAB_CFG[tab];
+  if (!cfg) return;
+  var searchEl = document.getElementById('aw-search');
+  var filterEl = document.getElementById('aw-filter');
+  var q = (searchEl ? searchEl.value : '').toLowerCase();
+  var st = filterEl ? filterEl.value : '';
+  document.querySelectorAll('#' + cfg.tbody + ' .data-row').forEach(function (row) {
+    var okText = !q || row.innerText.toLowerCase().indexOf(q) > -1;
+    var okStatus = !st || (row.getAttribute('data-status') || '') === st;
+    row.style.display = (okText && okStatus) ? '' : 'none';
   });
 }
 
@@ -1676,8 +1682,8 @@ function filterByStatus(tbodyId, val) {
    f = record field to sort on, t = 's' string | 'n' number | 'd' date.
    Blank/"—" values always sort to the bottom (regardless of direction). */
 var SORT_COLS = {
-  risks:  { 2: { f: 'name', t: 's' }, 5: { f: 'riskRating', t: 'score' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'impactDate', t: 'd' } },
-  issues: { 2: { f: 'name', t: 's' }, 4: { f: 'score',      t: 'score' }, 5: { f: 'status', t: 's' }, 6: { f: 'owner', t: 's' }, 8: { f: 'impactDate', t: 'd' } }
+  risks:  { 3: { f: 'name', t: 's' }, 6: { f: 'riskRating', t: 'score' }, 7: { f: 'status', t: 's' }, 8: { f: 'owner', t: 's' }, 10: { f: 'impactDate', t: 'd' } },
+  issues: { 3: { f: 'name', t: 's' }, 5: { f: 'score',      t: 'score' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'impactDate', t: 'd' } }
 };
 var SORT = { risks: { idx: null, dir: 1 }, issues: { idx: null, dir: 1 } };
 
@@ -1731,6 +1737,7 @@ function renderTab(tab) {
   if (tab === 'risks') renderRisks(DATA.risks, DATA.actionMap);
   else if (tab === 'issues') renderIssues(DATA.issues, DATA.actionMap);
   updateSortIndicators(tab);
+  reapplyFilters(tab);   /* keep any active search/status filter after a sort */
 }
 function toggleSort(tab, idx) {
   var st = SORT[tab];
@@ -1860,10 +1867,10 @@ function initUI() {
   });
 
   var search = document.getElementById('aw-search');
-  if (search) search.addEventListener('input', function () { filterTable(TAB_CFG[ACTIVE_TAB].tbody, search.value); });
+  if (search) search.addEventListener('input', function () { reapplyFilters(ACTIVE_TAB); });
 
   var filter = document.getElementById('aw-filter');
-  if (filter) filter.addEventListener('change', function () { filterByStatus(TAB_CFG[ACTIVE_TAB].tbody, filter.value); });
+  if (filter) filter.addEventListener('change', function () { reapplyFilters(ACTIVE_TAB); });
 
   wireSort('risks');
   wireSort('issues');
@@ -2283,9 +2290,9 @@ function loadAndRender() {
   try {
     c = getContext();
   } catch (e) {
-    showError('risks-body', 11, e.message);
-    showError('issues-body', 10, e.message);
-    showError('requests-body', 7, e.message);
+    showError('risks-body', 12, e.message);
+    showError('issues-body', 11, e.message);
+    showError('requests-body', 8, e.message);
     return Promise.reject(e);
   }
 
@@ -2349,9 +2356,9 @@ function loadAndRender() {
   .catch(function (err) {
     console.error('AdaptiveWork panel fetch error:', err);
     var msg = 'Failed to load data: ' + err.message;
-    showError('risks-body', 11, msg);
-    showError('issues-body', 10, msg);
-    showError('requests-body', 7, msg);
+    showError('risks-body', 12, msg);
+    showError('issues-body', 11, msg);
+    showError('requests-body', 8, msg);
   });
 }
 
@@ -2363,9 +2370,9 @@ setTimeout(function () {
   try {
     c = getContext();
   } catch (e) {
-    showError('risks-body', 11, e.message);
-    showError('issues-body', 10, e.message);
-    showError('requests-body', 7, e.message);
+    showError('risks-body', 12, e.message);
+    showError('issues-body', 11, e.message);
+    showError('requests-body', 8, e.message);
     return;
   }
 
@@ -2378,9 +2385,9 @@ setTimeout(function () {
   diag('host ' + window.location.hostname + '  |  api ' + c.base);
   diag('project ' + c.projId + '  |  session ' + (!!c.sid));
 
-  showLoading('risks-body', 11);
-  showLoading('issues-body', 10);
-  showLoading('requests-body', 7);
+  showLoading('risks-body', 12);
+  showLoading('issues-body', 11);
+  showLoading('requests-body', 8);
 
   /* Load real picklist option paths (non-blocking). Query the custom picklist
      type entities for their values, and also try describeEntities metadata. */

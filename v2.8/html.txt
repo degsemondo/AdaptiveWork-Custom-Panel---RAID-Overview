@@ -81,6 +81,7 @@
             <tr>
               <th style="width:28px"></th>
               <th>ID</th>
+              <th style="width:22px" aria-label="Description"></th>
               <th>Title</th>
               <th>Probability</th>
               <th>Impact</th>
@@ -110,6 +111,7 @@
             <tr>
               <th style="width:28px"></th>
               <th>ID</th>
+              <th style="width:22px" aria-label="Description"></th>
               <th>Issue name</th>
               <th>Impact</th>
               <th>Score</th>
@@ -138,6 +140,7 @@
             <tr>
               <th style="width:28px"></th>
               <th>ID</th>
+              <th style="width:22px" aria-label="Description"></th>
               <th>Request name</th>
               <th>Status</th>
               <th>Requestor</th>
