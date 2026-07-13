@@ -552,6 +552,7 @@ function toIssue(e) {
     owner:             (e.Owner && e.Owner.Name) || '—',
     reportingLevelRaw: rlRaw,  reportingLevel: cleanLabel(rlRaw) || '—',
     impactDate:        ISSUE_IMPACTDATE_FIELD ? (e[ISSUE_IMPACTDATE_FIELD] || null) : null,
+    dueDate:           e.DueDate || null,
     rawId:             e.id || ''
   };
 }
@@ -811,12 +812,19 @@ function deleteAction(el) {
   if (!el) return;
   var actionId = el.getAttribute('data-action-id');
   if (!actionId) { el.remove(); return; }
-  if (!window.confirm('Delete this action?')) return;
-  var c;
-  try { c = getContext(); } catch (e) { alert('Cannot delete action: ' + e.message); return; }
-  deleteObject(c.base, c.sid, actionId)
-    .then(function () { return loadAndRender(); })
-    .catch(function (err) { alert('Failed to delete action: ' + err.message); });
+  showConfirm({
+    title: 'Delete action',
+    message: 'Delete this action? This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger: true,
+    onConfirm: function () {
+      var c;
+      try { c = getContext(); } catch (e) { alert('Cannot delete action: ' + e.message); return; }
+      deleteObject(c.base, c.sid, actionId)
+        .then(function () { return loadAndRender(); })
+        .catch(function (err) { alert('Failed to delete action: ' + err.message); });
+    }
+  });
 }
 
 /* ---------- 10. Editable-cell HTML helper ----------
@@ -861,8 +869,8 @@ function idLink(rawId, sysId) {
 function actionBadge(n) {
   if (!n) return '';
   return ' <span class="action-badge" title="' + n + ' associated action' + (n === 1 ? '' : 's') + '"' +
-    ' style="display:inline-block;min-width:16px;height:16px;line-height:16px;padding:0 5px;' +
-    'border-radius:8px;background:#8B3A62;color:#fff;font-size:10px;font-weight:600;' +
+    ' style="display:inline-block;min-width:14px;height:14px;line-height:14px;padding:0 4px;' +
+    'border-radius:7px;background:#8B3A62;color:#fff;font-size:9px;font-weight:600;' +
     'text-align:center;vertical-align:middle;">' + n + '</span>';
 }
 
@@ -879,7 +887,7 @@ function renderRisks(risks, actionMap) {
     var hm = riskRatingHeatMap(r.riskRating);
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
@@ -902,7 +910,7 @@ function renderRisks(risks, actionMap) {
 function renderIssues(issues, actionMap) {
   var tbody = document.getElementById('issues-body');
   if (!issues.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data">No issues found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="no-data">No issues found for this project.</div></td></tr>';
     document.getElementById('badge-issues').textContent = '0';
     return;
   }
@@ -911,7 +919,7 @@ function renderIssues(issues, actionMap) {
     var hm = riskRatingHeatMap(issue.score);
     return '<tr class="data-row" data-status="' + esc(issue.status) + '">' +
       '<td><button class="expand-btn" data-target="' + issue.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(issue.rawId, issue.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',            issue.rawId, issue.name,              esc(issue.name)) +
       editCell('C_IssueImpact',    issue.rawId, issue.impactRaw,         esc(issue.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(issue.score) + '</span></td>' +
@@ -921,8 +929,9 @@ function renderIssues(issues, actionMap) {
       (ISSUE_IMPACTDATE_FIELD
         ? editCell(ISSUE_IMPACTDATE_FIELD, issue.rawId, issue.impactDate || '', '<span class="action-due ' + dueCls(issue.impactDate) + '">' + fmtDate(issue.impactDate) + '</span>')
         : '<td><span class="action-due">' + fmtDate(issue.impactDate) + '</span></td>') +
+      editCell('DueDate',          issue.rawId, issue.dueDate || '', '<span class="action-due ' + dueCls(issue.dueDate) + '">' + fmtDate(issue.dueDate) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="9">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="10">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-issues').textContent = issues.length;
 }
@@ -938,7 +947,7 @@ function renderRequests(requests, actionMap) {
     var actions = actionMap[req.rawId] || [];
     return '<tr class="data-row" data-status="' + esc(req.status) + '">' +
       '<td><button class="expand-btn" data-target="' + req.id + '-actions" aria-label="Show actions"></button></td>' +
-      '<td>' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + '</td>' +
+      '<td style="white-space:nowrap">' + idLink(req.rawId, req.sysId) + actionBadge(actions.length) + '</td>' +
       editCell('Title',       req.rawId, req.name,    esc(req.name)) +
       editCell('State',       req.rawId, req.statusRaw, pill(req.status)) +
       '<td>' + esc(req.requestor) + '</td>' +
@@ -978,6 +987,9 @@ function renderAll(risks, issues, requests, actionMap) {
   if (FIRST_RENDER) {
     diag('create State "Open" -> ' + (pickRawByLabel('State', ['Open']) || '(not resolvable)'));
   }
+  /* Keep any active column sort applied across (soft) refreshes. */
+  applySort('risks');
+  applySort('issues');
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
@@ -1124,32 +1136,61 @@ function executeCustomAction(base, sid, targetId, actionName, values) {
   });
 }
 
-/* Row-level "Create Issue" action on a Risk — runs the custom action (which sets
-   the Risk to Realised and creates a linked Issue), then reloads so the now-
-   Realised Risk drops out of the list and the new Issue appears.
+/* Styled in-panel confirmation dialog (NOT the browser's window.confirm).
+   opts = { title, message, confirmLabel, danger?, onConfirm }. Enter confirms,
+   Esc / backdrop-click / Cancel dismisses. */
+function showConfirm(opts) {
+  opts = opts || {};
+  var back = document.createElement('div');
+  back.className = 'aw-confirm-back';
+  back.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(32,33,36,0.4);' +
+    'z-index:2000;display:flex;align-items:center;justify-content:center;';
+  var card = document.createElement('div');
+  card.style.cssText = 'background:#fff;max-width:380px;width:88%;border-radius:8px;' +
+    'box-shadow:0 10px 34px rgba(0,0,0,0.28);padding:18px 20px;' +
+    'font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#202124;';
+  var okBg = opts.danger ? '#A32D2D' : '#8B3A62';
+  card.innerHTML =
+    '<div style="font-weight:600;font-size:15px;margin-bottom:8px;">' + esc(opts.title || 'Confirm') + '</div>' +
+    '<div style="margin-bottom:18px;color:#3c4043;">' + esc(opts.message || '') + '</div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
+      '<button class="aw-c-cancel" style="padding:7px 14px;border:1px solid #dadce0;background:#fff;color:#3c4043;border-radius:4px;cursor:pointer;font:inherit;">Cancel</button>' +
+      '<button class="aw-c-ok" style="padding:7px 14px;border:none;background:' + okBg + ';color:#fff;border-radius:4px;cursor:pointer;font:inherit;">' + esc(opts.confirmLabel || 'Confirm') + '</button>' +
+    '</div>';
+  back.appendChild(card);
+  function close() { if (back.parentNode) back.parentNode.removeChild(back); document.removeEventListener('keydown', onKey, true); }
+  function go() { close(); if (opts.onConfirm) opts.onConfirm(); }
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter') { e.preventDefault(); go(); } }
+  back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
+  card.querySelector('.aw-c-cancel').addEventListener('click', close);
+  card.querySelector('.aw-c-ok').addEventListener('click', go);
+  document.addEventListener('keydown', onKey, true);
+  (document.querySelector('.aw-panel') || document.body).appendChild(back);
+  var okBtn = card.querySelector('.aw-c-ok'); if (okBtn) okBtn.focus();
+}
 
-   No browser dialog: the bug button arms an inline ✓/✗ confirm in the cell.
-   The Risk id/name live on the enclosing .row-action-cell. */
+/* Row-level "Create Issue" action on a Risk — runs the custom action (which sets
+   the Risk to Realised and creates a linked Issue), then soft-refreshes so the
+   now-Realised Risk drops out of the list and the new Issue appears.
+
+   Clicking the bug button opens a styled confirm popup (showConfirm); on confirm
+   it runs against the Risk on the enclosing .row-action-cell. */
 function createIssueButtonHtml() {
   return '<button class="row-action create-issue"' +
     ' title="Create Issue — sets this Risk to Realised and creates a linked Issue"' +
     ' aria-label="Create Issue from this risk"><i class="ti ti-bug" aria-hidden="true"></i></button>';
 }
-/* First click: swap the bug button for an inline confirm (✓) / cancel (✗) pair. */
-function armCreateIssue(btn) {
-  var cell = btn.closest('.row-action-cell');
+function confirmCreateIssue(cell) {
   if (!cell) return;
-  cell.innerHTML =
-    '<span class="ci-confirm-wrap">' +
-      '<button class="row-action ci-confirm" title="Confirm — create Issue" aria-label="Confirm create Issue"><i class="ti ti-check" aria-hidden="true"></i></button>' +
-      '<button class="row-action ci-cancel" title="Cancel" aria-label="Cancel create Issue"><i class="ti ti-x" aria-hidden="true"></i></button>' +
-    '</span>';
+  var name = cell.getAttribute('data-name') || 'this risk';
+  showConfirm({
+    title: 'Create Issue from Risk',
+    message: 'Escalate "' + name + '" to an Issue? The risk will be set to Realised, a linked Issue created, and the risk\'s actions marked Completed.',
+    confirmLabel: 'Create Issue',
+    onConfirm: function () { runCreateIssue(cell); }
+  });
 }
-/* ✗ — restore the original bug button. */
-function disarmCreateIssue(cell) {
-  if (cell) cell.innerHTML = createIssueButtonHtml();
-}
-/* ✓ — run the custom action against the Risk on this cell. */
+/* Run the custom action against the Risk on this cell. */
 function runCreateIssue(cell) {
   if (!cell) return;
   var id = cell.getAttribute('data-id');
@@ -1518,6 +1559,94 @@ function filterByStatus(tbodyId, val) {
   });
 }
 
+/* ---------- 16b. Column sorting (click a header) ----------
+   Which header columns are sortable per tab, keyed by their <th> index:
+   f = record field to sort on, t = 's' string | 'n' number | 'd' date.
+   Blank/"—" values always sort to the bottom (regardless of direction). */
+var SORT_COLS = {
+  risks:  { 2: { f: 'name', t: 's' }, 5: { f: 'riskRating', t: 'n' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'impactDate', t: 'd' } },
+  issues: { 2: { f: 'name', t: 's' }, 4: { f: 'score',      t: 'n' }, 5: { f: 'status', t: 's' }, 6: { f: 'owner', t: 's' }, 8: { f: 'impactDate', t: 'd' } }
+};
+var SORT = { risks: { idx: null, dir: 1 }, issues: { idx: null, dir: 1 } };
+
+function sortIsEmpty(v, t) {
+  if (v === null || v === undefined) return true;
+  var s = String(v).trim();
+  if (s === '' || s === '—') return true;
+  if (t === 'n') return isNaN(parseFloat(s.replace(/[^0-9.\-]/g, '')));
+  if (t === 'd') return isNaN(new Date(v).getTime());
+  return false;
+}
+/* Sort DATA[tab] in place according to the tab's current SORT state. */
+function applySort(tab) {
+  var st = SORT[tab];
+  if (!st || st.idx === null) return;
+  var col = SORT_COLS[tab] && SORT_COLS[tab][st.idx];
+  var list = DATA[tab];
+  if (!col || !list) return;
+  list.sort(function (a, b) {
+    var av = a[col.f], bv = b[col.f];
+    var ae = sortIsEmpty(av, col.t), be = sortIsEmpty(bv, col.t);
+    if (ae && be) return 0;
+    if (ae) return 1;            /* blanks last, either direction */
+    if (be) return -1;
+    var r;
+    if (col.t === 'n') {
+      r = parseFloat(String(av).replace(/[^0-9.\-]/g, '')) - parseFloat(String(bv).replace(/[^0-9.\-]/g, ''));
+    } else if (col.t === 'd') {
+      r = new Date(av).getTime() - new Date(bv).getTime();
+    } else {
+      var as = String(av).toLowerCase(), bs = String(bv).toLowerCase();
+      r = as < bs ? -1 : as > bs ? 1 : 0;
+    }
+    return r * st.dir;
+  });
+}
+/* Re-sort + repaint a single tab's table (used on header click). */
+function renderTab(tab) {
+  applySort(tab);
+  if (tab === 'risks') renderRisks(DATA.risks, DATA.actionMap);
+  else if (tab === 'issues') renderIssues(DATA.issues, DATA.actionMap);
+  updateSortIndicators(tab);
+}
+function toggleSort(tab, idx) {
+  var st = SORT[tab];
+  if (st.idx === idx) st.dir = -st.dir; else { st.idx = idx; st.dir = 1; }
+  renderTab(tab);
+}
+/* Show a ▲/▼ marker on the active sort column (base label cached on the th). */
+function updateSortIndicators(tab) {
+  var tbody = document.getElementById(tab + '-body');
+  var table = tbody && tbody.closest ? tbody.closest('table') : null;
+  if (!table) return;
+  var st = SORT[tab], cols = SORT_COLS[tab] || {};
+  var ths = table.querySelectorAll('thead th');
+  for (var i = 0; i < ths.length; i++) {
+    var th = ths[i];
+    var base = th.getAttribute('data-sort-base');
+    if (base === null) { base = th.textContent.replace(/[\s▲▼]+$/, ''); th.setAttribute('data-sort-base', base); }
+    if (!cols[i]) continue;
+    th.textContent = (st.idx === i) ? base + (st.dir > 0 ? ' ▲' : ' ▼') : base;
+  }
+}
+/* Make the sortable headers of a tab clickable (called once at init). */
+function wireSort(tab) {
+  var tbody = document.getElementById(tab + '-body');
+  var table = tbody && tbody.closest ? tbody.closest('table') : null;
+  if (!table) return;
+  var cols = SORT_COLS[tab] || {};
+  var ths = table.querySelectorAll('thead th');
+  for (var i = 0; i < ths.length; i++) {
+    (function (th, idx) {
+      if (!cols[idx]) return;
+      th.style.cursor = 'pointer';
+      th.title = 'Sort by ' + th.textContent.trim();
+      th.addEventListener('click', function () { toggleSort(tab, idx); });
+    })(ths[i], i);
+  }
+  updateSortIndicators(tab);
+}
+
 /* ---------- 17. UI wiring ---------- */
 /* Per-tab config for the single shared toolbar (search / status / New). */
 var TAB_CFG = {
@@ -1590,13 +1719,9 @@ function initUI() {
       var aDel = e.target.closest('.act-del');
       if (aDel) { deleteAction(aDel.closest('.action-item')); return; }
 
-      /* Row-level Create Issue action (Risks tab) — inline ✓/✗ confirm */
-      var ciOk = e.target.closest('.ci-confirm');
-      if (ciOk) { runCreateIssue(ciOk.closest('.row-action-cell')); return; }
-      var ciNo = e.target.closest('.ci-cancel');
-      if (ciNo) { disarmCreateIssue(ciNo.closest('.row-action-cell')); return; }
+      /* Row-level Create Issue action (Risks tab) — styled confirm popup */
       var ci = e.target.closest('.create-issue');
-      if (ci) { armCreateIssue(ci); return; }
+      if (ci) { confirmCreateIssue(ci.closest('.row-action-cell')); return; }
 
       var editable = e.target.closest('.editable');
       if (editable && !editable.classList.contains('editing')) { startEdit(editable); return; }
@@ -1608,6 +1733,9 @@ function initUI() {
 
   var filter = document.getElementById('aw-filter');
   if (filter) filter.addEventListener('change', function () { filterByStatus(TAB_CFG[ACTIVE_TAB].tbody, filter.value); });
+
+  wireSort('risks');
+  wireSort('issues');
 
   var nb = document.getElementById('btn-new');
   if (nb) nb.addEventListener('click', function () { TAB_CFG[ACTIVE_TAB].create(); });
@@ -2023,7 +2151,7 @@ function loadAndRender() {
     c = getContext();
   } catch (e) {
     showError('risks-body', 11, e.message);
-    showError('issues-body', 9, e.message);
+    showError('issues-body', 10, e.message);
     showError('requests-body', 7, e.message);
     return Promise.reject(e);
   }
@@ -2033,7 +2161,7 @@ function loadAndRender() {
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
     "C_ImpactDate FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
-    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel" +
+    "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel, DueDate" +
     (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
     " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
   var qRequests =
@@ -2089,7 +2217,7 @@ function loadAndRender() {
     console.error('AdaptiveWork panel fetch error:', err);
     var msg = 'Failed to load data: ' + err.message;
     showError('risks-body', 11, msg);
-    showError('issues-body', 9, msg);
+    showError('issues-body', 10, msg);
     showError('requests-body', 7, msg);
   });
 }
@@ -2103,7 +2231,7 @@ setTimeout(function () {
     c = getContext();
   } catch (e) {
     showError('risks-body', 11, e.message);
-    showError('issues-body', 9, e.message);
+    showError('issues-body', 10, e.message);
     showError('requests-body', 7, e.message);
     return;
   }
@@ -2118,7 +2246,7 @@ setTimeout(function () {
   diag('project ' + c.projId + '  |  session ' + (!!c.sid));
 
   showLoading('risks-body', 11);
-  showLoading('issues-body', 9);
+  showLoading('issues-body', 10);
   showLoading('requests-body', 7);
 
   /* Load real picklist option paths (non-blocking). Query the custom picklist
