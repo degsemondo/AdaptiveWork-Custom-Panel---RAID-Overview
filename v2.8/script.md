@@ -120,6 +120,9 @@ function loadCurrentUser() {
         var uid = j.userId || j.UserId || (j.user && (j.user.id || j.user.Id)) ||
                   (j.sessionInfo && (j.sessionInfo.userId || j.sessionInfo.UserId)) || '';
         if (!uid) throw new Error('no userId in response');
+        /* getSessionInfo returns a bare GUID; the object path + Owner reference
+           both need the full "/User/<id>" form. */
+        if (String(uid).charAt(0) !== '/') uid = '/User/' + uid;
         CURRENT_USER.id = uid;
         return fetchUserName(c.base, c.sid, uid).then(function (name) {
           CURRENT_USER.name = name;
