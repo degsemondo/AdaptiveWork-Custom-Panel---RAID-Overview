@@ -17,6 +17,12 @@ function isShownRiskState(label) {
   return RISK_STATES.some(function (s) { return s.toLowerCase() === String(label || '').toLowerCase(); });
 }
 
+/* Selectable Status values when EDITING a Risk — the inline Status dropdown on a
+   risk row offers only these. Distinct from RISK_STATES, which controls which
+   risks are DISPLAYED. "Closed" isn't present in the loaded data, so its path is
+   derived from the environment's own State prefix (e.g. /CaseState/Closed). */
+var RISK_STATE_OPTIONS = ['Open', 'Closed'];
+
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
    this one string. */
@@ -69,6 +75,41 @@ var USER_NAME = {};
 var USER_FIELDS = ['AssignedTo', 'Owner'];
 function isUserField(f) { return USER_FIELDS.indexOf(f) > -1; }
 function rememberUser(id, name) { if (id) USER_NAME[id] = name || USER_NAME[id] || cleanLabel(id); }
+
+/* The signed-in user — used to default the Owner on new rows. Resolved at load
+   via getSessionInfo (a custom PAGE has no CurrentObject to read the user from).
+   Tries the data + authentication service paths; best-effort, non-blocking. */
+var CURRENT_USER = { id: '', name: '' };
+function fetchUserName(base, sid, userId) {
+  var url = base.replace(/\/$/, '') + API_OBJECTS + '/' + String(userId).replace(/^\//, '') + '?fields=Name';
+  return fetch(url, { headers: { 'Authorization': 'Session ' + sid } })
+    .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(function (j) { return (j && (j.Name || (j.entity && j.entity.Name))) || cleanLabel(userId); })
+    .catch(function () { return cleanLabel(userId); });
+}
+function loadCurrentUser() {
+  var c = getContext();
+  var paths = ['/V2.0/services/data/getSessionInfo', '/V2.0/services/authentication/getSessionInfo'];
+  function tryPath(i) {
+    if (i >= paths.length) { diag('current user: (could not resolve)'); return Promise.resolve(); }
+    var url = c.base.replace(/\/$/, '') + paths[i];
+    return fetch(url, { headers: { 'Authorization': 'Session ' + c.sid } })
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then(function (j) {
+        var uid = j.userId || j.UserId || (j.user && (j.user.id || j.user.Id)) ||
+                  (j.sessionInfo && (j.sessionInfo.userId || j.sessionInfo.UserId)) || '';
+        if (!uid) throw new Error('no userId in response');
+        CURRENT_USER.id = uid;
+        return fetchUserName(c.base, c.sid, uid).then(function (name) {
+          CURRENT_USER.name = name;
+          rememberUser(uid, name);
+          diag('current user: ' + name + '  (' + uid + ')');
+        });
+      })
+      .catch(function () { return tryPath(i + 1); });
+  }
+  return tryPath(0);
+}
 
 /* Search system users by (partial) name. Returns [{ id, name }] (capped). */
 function searchUsers(term) {
@@ -216,6 +257,43 @@ function pickOptionsHtml(field, current, includeBlank) {
   return html + pickOptionList(field, current).map(function (o) {
     return '<option value="' + esc(o.raw) + '"' +
       (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+  }).join('');
+}
+
+/* Resolve a Risk Status label to its real "/Type/Value" path. Prefer a value
+   already present in this environment (metadata/data); otherwise derive it from
+   the State prefix the environment itself uses — so "Closed" becomes
+   /CaseState/Closed when the tenant's states live under /CaseState/. */
+function statePrefix() {
+  var lists = [PICK_META.State, PICK.State];
+  for (var li = 0; li < lists.length; li++) {
+    var list = lists[li] || [];
+    for (var i = 0; i < list.length; i++) {
+      var raw = (list[i] && list[i].raw !== undefined) ? list[i].raw : list[i];
+      if (raw && String(raw).charAt(0) === '/') { var p = String(raw).split('/'); p.pop(); return p.join('/') + '/'; }
+    }
+  }
+  return '/CaseState/';
+}
+function stateRawForLabel(label) {
+  return pickRawByLabel('State', [label]) || (statePrefix() + label);
+}
+/* Option list for a Risk's inline Status dropdown — RISK_STATE_OPTIONS only,
+   plus the row's current value if it isn't one of them (so an existing Draft /
+   Realised risk still shows and can be moved to Open / Closed). */
+function riskStateOptionList(current) {
+  var out = [], seen = {};
+  RISK_STATE_OPTIONS.forEach(function (lbl) {
+    var raw = stateRawForLabel(lbl);
+    if (raw && !seen[raw]) { seen[raw] = 1; out.push({ raw: raw, label: lbl }); }
+  });
+  if (current && !seen[current]) out.push({ raw: current, label: cleanLabel(current) });
+  return out;
+}
+function riskStateOptionsHtml(current, includeBlank) {
+  var html = includeBlank ? '<option value="">—</option>' : '';
+  return html + riskStateOptionList(current).map(function (o) {
+    return '<option value="' + esc(o.raw) + '"' + (o.raw === current ? ' selected' : '') + '>' + esc(o.label) + '</option>';
   }).join('');
 }
 
@@ -1157,6 +1235,11 @@ function openNewRow(entityType) {
   tr.querySelectorAll('.ta-input').forEach(function (inp) {
     var menu = inp.parentNode.querySelector('.ta-menu');
     if (menu) attachUserTypeahead(inp, menu);
+    /* Default the Owner to the signed-in user (already committed as a pick). */
+    if (inp.getAttribute('data-field') === 'Owner' && CURRENT_USER.id) {
+      inp.value = CURRENT_USER.name || '';
+      inp.setAttribute('data-user-id', CURRENT_USER.id);
+    }
   });
 
   var saveB = tr.querySelector('.new-save');
@@ -1263,7 +1346,12 @@ function startEdit(cell) {
   }
 
   if (isPick(field)) {
-    cell.innerHTML = '<select class="edit-input">' + pickOptionsHtml(field, value, false) + '</select>';
+    /* A Risk's Status offers only Open / Closed; other State cells (Issues,
+       Requests) and all other picklists use the full environment options. */
+    var optsHtml = (field === 'State' && cell.closest && cell.closest('#risks-body'))
+      ? riskStateOptionsHtml(value, false)
+      : pickOptionsHtml(field, value, false);
+    cell.innerHTML = '<select class="edit-input">' + optsHtml + '</select>';
     var sel = cell.querySelector('select');
     sel.addEventListener('change', function () { commitEdit(cell); });
     sel.addEventListener('keydown', escHandler);
@@ -1878,6 +1966,9 @@ setTimeout(function () {
   });
   loadPicklistMeta().catch(function (err) {
     console.warn('Picklist metadata unavailable, falling back to data-derived options:', err && err.message);
+  });
+  loadCurrentUser().catch(function (err) {
+    console.warn('Current user unavailable:', err && err.message);
   });
 
   var qRisks =
