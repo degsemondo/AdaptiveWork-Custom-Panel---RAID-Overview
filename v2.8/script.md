@@ -1305,7 +1305,8 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'State' },
       { type: 'user',   field: 'Owner' },
       { type: 'pick',   field: 'C_ReportingLevel' },
-      { type: 'date',   field: ISSUE_IMPACTDATE_FIELD, actions: true }
+      { type: 'date',   field: ISSUE_IMPACTDATE_FIELD, actions: false },
+      { type: 'date',   field: 'DueDate', actions: true }
     ]
   },
   EnhancementRequest: {
@@ -1802,9 +1803,9 @@ function exportRowsRisks() {
 function exportRowsIssues() {
   var rows = [], kinds = [];
   DATA.issues.forEach(function (i) {
-    rows.push([i.sysId, i.name, i.impact, i.score, i.status, i.owner, i.reportingLevel, exportDateCell(i.impactDate)]);
+    rows.push([i.sysId, i.name, i.impact, i.score, i.status, i.owner, i.reportingLevel, exportDateCell(i.impactDate), exportDateCell(i.dueDate)]);
     kinds.push('record');
-    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 8)); kinds.push('action'); });
+    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 9)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
@@ -1899,7 +1900,7 @@ function exportToExcel() {
       ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date'],
       exportRowsRisks(), 4) +
     buildSheetXml('Issues',
-      ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date'],
+      ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date', 'Due Date'],
       exportRowsIssues(), 3) +
     buildSheetXml('Change Requests',
       ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
@@ -1944,7 +1945,8 @@ var IMPORT_CFG = {
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
       { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
-      { hdr: 'Impact Date',     api: 'C_ImpactDate',     kind: 'date' }
+      { hdr: 'Impact Date',     api: 'C_ImpactDate',     kind: 'date' },
+      { hdr: 'Due Date',        api: 'DueDate',          kind: 'date' }
     ]
   },
   'Change Requests': {
@@ -1996,6 +1998,7 @@ function recCurrent(entityType, rec, api) {
     if (api === 'Owner')            return rec.ownerRaw;
     if (api === 'C_ReportingLevel') return rec.reportingLevelRaw;
     if (ISSUE_IMPACTDATE_FIELD && api === ISSUE_IMPACTDATE_FIELD) return rec.impactDate || '';
+    if (api === 'DueDate')          return rec.dueDate || '';
   } else if (entityType === 'EnhancementRequest') {
     if (api === 'State')   return rec.statusRaw;
     if (api === 'DueDate') return rec.decisionBy || '';
