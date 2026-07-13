@@ -846,6 +846,8 @@ function renderAll(risks, issues, requests, actionMap) {
   Object.keys(actionMap || {}).forEach(function (pid) {
     actionMap[pid].forEach(function (a) { addPick('ActionItemState', a.stateRaw); });
   });
+  /* DIAGNOSTIC: can we resolve the Risk "Open" State path for create? */
+  diag('create State "Open" -> ' + (pickRawByLabel('State', ['Open']) || '(not resolvable)'));
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
@@ -1922,6 +1924,11 @@ setTimeout(function () {
       return isShownRiskState(cleanLabel(pickRaw(e.State)));
     });
     var risks    = riskRows.map(toRisk);
+    /* DIAGNOSTIC: how many risks came back vs shown, and their distinct States. */
+    var seenStates = {};
+    results[0].forEach(function (e) { var s = cleanLabel(pickRaw(e.State)) || '(blank)'; seenStates[s] = (seenStates[s] || 0) + 1; });
+    diag('risks: ' + results[0].length + ' returned, ' + riskRows.length + ' shown (filter ' + RISK_STATES.join('/') + ')');
+    diag('risk States seen: ' + (Object.keys(seenStates).map(function (k) { return k + '×' + seenStates[k]; }).join(', ') || 'none'));
     var issues   = results[1].map(toIssue);
     /* Requests tab shows Change Requests only (RequestType = 'Change Request'). */
     var reqRows  = results[2].filter(function (e) {
