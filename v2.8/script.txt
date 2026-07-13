@@ -1496,11 +1496,15 @@ function startEdit(cell) {
   }
 
   if (isPick(field)) {
-    /* A Risk's Status offers only Open / Closed; other State cells (Issues,
-       Requests) and all other picklists use the full environment options. */
+    /* A Risk's Status offers only Draft / Open / Closed; other State cells (Issues,
+       Requests) and all other picklists use the full environment options.
+       Include a blank "—" option when the cell is currently empty, so the first
+       real option isn't auto-selected — otherwise picking that first option fires
+       no change event and the update never commits. */
+    var blank = !value;
     var optsHtml = (field === 'State' && cell.closest && cell.closest('#risks-body'))
-      ? riskStateOptionsHtml(value, false)
-      : pickOptionsHtml(field, value, false);
+      ? riskStateOptionsHtml(value, blank)
+      : pickOptionsHtml(field, value, blank);
     cell.innerHTML = '<select class="edit-input">' + optsHtml + '</select>';
     var sel = cell.querySelector('select');
     sel.addEventListener('change', function () { commitEdit(cell); });
