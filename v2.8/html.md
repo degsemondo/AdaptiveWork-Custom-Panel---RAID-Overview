@@ -84,15 +84,15 @@
             <tr>
               <th style="width:28px"></th>
               <th>ID</th>
-              <th style="width:22px" aria-label="Description"></th>
+              <th>Status</th>
               <th>Title</th>
+              <th style="width:22px" aria-label="Description"></th>
               <th>Probability</th>
               <th>Impact</th>
               <th>Score</th>
-              <th>Status</th>
               <th>Owner</th>
-              <th>Reporting Level</th>
               <th>Due Date</th>
+              <th>Reporting Level</th>
               <th>Next Review Date</th>
               <th style="width:58px"></th>
             </tr>

@@ -1,6 +1,3 @@
-# CSS Field - v2.0 (Ultra-Compact)
-
-```css
 /* ============================================================
    AdaptiveWork Custom Panel — Professional Planview Design
    ULTRA-COMPACT VERSION
@@ -577,4 +574,3 @@ table.aw-table tbody tr:hover {
 /* Spinner for in-progress row actions */
 @keyframes aw-spin { to { transform: rotate(360deg); } }
 .row-action .spin { animation: aw-spin 0.7s linear infinite; }
-```

@@ -618,6 +618,7 @@ function toAction(e) {
     dueDate:  e.DueDate || null,
     stateRaw: pickRaw(e.ActionItemState),
     status:   statusLabel,
+    statusAction: e.C_StatusAction || '',
     parentId: (e.Container && e.Container.id) || ''
   };
 }
@@ -699,19 +700,25 @@ function actionStatusInfo(stateRaw, dueIso) {
             :           'No due date';
   return { label: label, done: isDone, late: isLate };
 }
-/* Inner HTML of an action row in display mode (icon, name, owner, status, tools). */
-function actionInnerHtml(name, ownerName, stateRaw, dueIso) {
+/* Inner HTML of an action row in display mode (icon, name, owner, status, tools).
+   statusAction = free-text C_StatusAction value (drives the status pop-out icon's tint). */
+function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction) {
   var s = actionStatusInfo(stateRaw, dueIso);
   var iconCol = s.done ? '#3B6D11' : '#185FA5';
   var dCls = s.late ? 'overdue' : 'ok';
   var stateLbl = cleanLabel(stateRaw);
   var statePill = stateLbl ? '<span class="pill ' + (PILL_MAP[stateLbl] || 'pill-medium') + '">' + esc(stateLbl) + '</span>' : '';
+  var hasStatus = !!(statusAction && String(statusAction).trim());
+  var statusBtn = '<button class="act-status" title="' + (hasStatus ? 'View / edit status update' : 'Add status update') +
+    '" aria-label="Action status"' + ' style="color:' + (hasStatus ? '#8B3A62' : '#c9ccd1') + '">' +
+    '<i class="ti ti-notes" aria-hidden="true"></i></button>';
   return '<i class="ti ti-circle-check" style="font-size:14px;color:' + iconCol + '" aria-hidden="true"></i>' +
     '<span class="action-name">' + esc(name) + '</span>' +
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
     statePill +
     (s.label ? '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' : '') +
     '<span class="action-tools">' +
+      statusBtn +
       '<button class="act-edit" title="Edit action" aria-label="Edit action"><i class="ti ti-pencil" aria-hidden="true"></i></button>' +
       '<button class="act-del" title="Delete action" aria-label="Delete action"><i class="ti ti-trash" aria-hidden="true"></i></button>' +
     '</span>';
@@ -724,8 +731,9 @@ function actionItemHtml(a) {
     ' data-owner="' + esc(a.ownerRaw) + '"' +
     ' data-owner-name="' + esc(a.assignee) + '"' +
     ' data-due="' + esc(a.dueDate || '') + '"' +
-    ' data-state="' + esc(a.stateRaw) + '">' +
-    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate) +
+    ' data-state="' + esc(a.stateRaw) + '"' +
+    ' data-status-action="' + esc(a.statusAction || '') + '">' +
+    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction) +
     '</div>';
 }
 /* Edit form for an action (used for both edit and add). */
@@ -762,7 +770,8 @@ function actionDataFromEl(el) {
     ownerRaw: el.getAttribute('data-owner') || '',
     assignee: el.getAttribute('data-owner-name') || '',
     dueDate:  el.getAttribute('data-due') || '',
-    stateRaw: el.getAttribute('data-state') || ''
+    stateRaw: el.getAttribute('data-state') || '',
+    statusAction: el.getAttribute('data-status-action') || ''
   };
 }
 function startActionEdit(el) {
@@ -776,7 +785,7 @@ function cancelActionEdit(el) {
   if (!el) return;
   if (!el.getAttribute('data-action-id')) { el.remove(); return; }   /* discard new draft */
   var a = actionDataFromEl(el);
-  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate);
+  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction);
 }
 function addActionRow(addBtn) {
   var block = addBtn.closest('.actions-block');
@@ -854,6 +863,29 @@ function deleteAction(el) {
     }
   });
 }
+/* Pop-out editor for an action's free-text Status update (C_StatusAction) — the
+   same centered, non-dimming textarea dialog used for a Risk's Description.
+   Reads/writes the value from the row's data-status-action attribute + the
+   ActionItem's C_StatusAction field, then soft-refreshes. */
+function openActionStatus(el) {
+  if (!el) return;
+  var actionId = el.getAttribute('data-action-id');
+  if (!actionId) { alert('Save the action first, then add a status update.'); return; }
+  var current = el.getAttribute('data-status-action') || '';
+  var name = el.getAttribute('data-name') || '';
+  showDescriptionDialog({
+    title: 'Status update' + (name ? ' — ' + name : ''),
+    value: current,
+    onSave: function (text) {
+      if (String(text) === String(current)) return;   /* unchanged */
+      var c;
+      try { c = getContext(); } catch (e) { alert('Cannot save status: ' + e.message); return; }
+      updateObject(c.base, c.sid, actionId, { C_StatusAction: text })
+        .then(function () { el.setAttribute('data-status-action', text); return loadAndRender(); })
+        .catch(function (err) { alert('Failed to save status: ' + err.message); });
+    }
+  });
+}
 
 /* ---------- 10. Editable-cell HTML helper ----------
    field   = AdaptiveWork API field name (Title, C_Impact, State, DueDate ...)
@@ -928,17 +960,17 @@ function renderRisks(risks, actionMap) {
     return '<tr class="data-row" data-status="' + esc(r.status) + '">' +
       '<td><button class="expand-btn" data-target="' + r.id + '-actions" aria-label="Show actions"></button></td>' +
       '<td style="white-space:nowrap">' + idLink(r.rawId, r.sysId) + actionBadge(actions.length) + '</td>' +
-      '<td style="text-align:center">' + descIcon(r) + '</td>' +
+      editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
+      '<td style="text-align:center">' + descIcon(r) + '</td>' +
       editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
-      editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
+      editCell('DueDate',           r.rawId, r.dueDate || '',        '<span class="action-due ' + dueCls(r.dueDate) + '">' + fmtDate(r.dueDate) + '</span>') +
       (RISK_REPORTING_FIELD
         ? editCell(RISK_REPORTING_FIELD, r.rawId, r.reportingLevelRaw, esc(r.reportingLevel))
         : '<td>' + esc(r.reportingLevel || '—') + '</td>') +
-      editCell('DueDate',           r.rawId, r.dueDate || '',        '<span class="action-due ' + dueCls(r.dueDate) + '">' + fmtDate(r.dueDate) + '</span>') +
       editCell('C_NextReviewDateR', r.rawId, r.nextReviewDate || '', '<span class="action-due ' + dueCls(r.nextReviewDate) + '">' + fmtDate(r.nextReviewDate) + '</span>') +
       '<td class="row-action-cell" data-id="' + esc(r.rawId) + '" data-name="' + esc(r.name) + '">' +
         createIssueButtonHtml() +
@@ -1395,15 +1427,15 @@ var NEW_ROW_DEFS = {
     tbody: 'risks-body', label: 'risk',
     cells: [
       { type: 'static', html: '—' },                       /* ID (system-assigned) */
-      { type: 'static', html: '' },                        /* Description (icon appears once saved) */
+      { type: 'static', html: 'Draft' },                   /* Status — new risks start as Draft */
       { type: 'text',   field: 'Title', placeholder: 'Risk name' },
+      { type: 'static', html: '' },                        /* Description (icon appears once saved) */
       { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
-      { type: 'pick',   field: RISK_IMPACT_FIELD },
+      { type: 'pick',   field: RISK_IMPACT_FIELD },         /* Impact */
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
-      { type: 'static', html: 'Draft' },                   /* new risks start as Draft */
       { type: 'user',   field: 'Owner' },
-      (RISK_REPORTING_FIELD ? { type: 'pick', field: RISK_REPORTING_FIELD } : { type: 'static', html: '—' }),
       { type: 'date',   field: 'DueDate', actions: false },
+      (RISK_REPORTING_FIELD ? { type: 'pick', field: RISK_REPORTING_FIELD } : { type: 'static', html: '—' }),
       { type: 'date',   field: 'C_NextReviewDateR', actions: true }
     ]
   },
@@ -1706,7 +1738,7 @@ function reapplyFilters(tab) {
    f = record field to sort on, t = 's' string | 'n' number | 'd' date.
    Blank/"—" values always sort to the bottom (regardless of direction). */
 var SORT_COLS = {
-  risks:  { 3: { f: 'name', t: 's' }, 6: { f: 'riskRating', t: 'score' }, 7: { f: 'status', t: 's' }, 8: { f: 'owner', t: 's' }, 10: { f: 'dueDate', t: 'd' }, 11: { f: 'nextReviewDate', t: 'd' } },
+  risks:  { 2: { f: 'status', t: 's' }, 3: { f: 'name', t: 's' }, 7: { f: 'riskRating', t: 'score' }, 8: { f: 'owner', t: 's' }, 9: { f: 'dueDate', t: 'd' }, 11: { f: 'nextReviewDate', t: 'd' } },
   issues: { 3: { f: 'name', t: 's' }, 5: { f: 'score',      t: 'score' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'dueDate', t: 'd' } }
 };
 var SORT = { risks: { idx: null, dir: 1 }, issues: { idx: null, dir: 1 } };
@@ -1876,6 +1908,8 @@ function initUI() {
       if (aEdit) { startActionEdit(aEdit.closest('.action-item')); return; }
       var aDel = e.target.closest('.act-del');
       if (aDel) { deleteAction(aDel.closest('.action-item')); return; }
+      var aStatus = e.target.closest('.act-status');
+      if (aStatus) { openActionStatus(aStatus.closest('.action-item')); return; }
 
       /* Row-level Create Issue action (Risks tab) — styled confirm popup */
       var ci = e.target.closest('.create-issue');
@@ -2357,7 +2391,7 @@ function loadAndRender() {
 
     var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
     var qActions =
-      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, Container.id " +
+      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, C_StatusAction, Container.id " +
       "FROM ActionItem WHERE Container IN (" + inList + ")";
 
     return czql(c.base, c.sid, qActions).then(function (actionEntities) {
