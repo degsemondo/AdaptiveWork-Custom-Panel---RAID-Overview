@@ -89,7 +89,8 @@
               <th>Status</th>
               <th>Owner</th>
               <th>Reporting Level</th>
-              <th>Impact Date</th>
+              <th>Due Date</th>
+              <th>Next Review Date</th>
               <th style="width:58px"></th>
             </tr>
           </thead>
@@ -118,7 +119,6 @@
               <th>Status</th>
               <th>Owner</th>
               <th>Reporting Level</th>
-              <th>Impact Date</th>
               <th>Due Date</th>
             </tr>
           </thead>

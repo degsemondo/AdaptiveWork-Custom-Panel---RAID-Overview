@@ -70,11 +70,13 @@ var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
    C_IssueIssueImpact; Risk Probability is C_Likelihood -> C_RiskLikelihood.) */
 var RISK_IMPACT_FIELD = 'C_ImpactR';
 
-/* Impact Date field API name on the ISSUE entity — DIFFERS from Risk's.
-   Confirmed on eu.clarizentb.com: Issue = C_IssueImpactDate; Risk = C_ImpactDate.
-   Set to '' to disable for Issue (column shows read-only "—" and it's omitted
-   from the issue query / create / edit / import). */
-var ISSUE_IMPACTDATE_FIELD = 'C_IssueImpactDate';
+/* Issue Impact Date has been removed from the panel — kept as '' so the (now
+   unused) impact-date conditionals stay inert. */
+var ISSUE_IMPACTDATE_FIELD = '';
+
+/* The Risks tab shows Due Date (standard DueDate) + Next Review Date
+   (C_NextReviewDateR); it no longer shows the old C_ImpactDate. */
+var RISK_NEXTREVIEW_FIELD = 'C_NextReviewDateR';
 
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
@@ -93,7 +95,7 @@ function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
 function isPillField(f) { return f === 'State' || f === 'Priority'; }
-function isDateField(f) { return f === 'DueDate' || f === 'C_ImpactDate' || (!!ISSUE_IMPACTDATE_FIELD && f === ISSUE_IMPACTDATE_FIELD); }
+function isDateField(f) { return f === 'DueDate' || f === RISK_NEXTREVIEW_FIELD; }
 function addPick(field, raw) {
   if (!raw) return;
   if (!PICK[field]) PICK[field] = [];
@@ -554,7 +556,8 @@ function toRisk(e) {
     ownerRaw:          (e.Owner && e.Owner.id) || '',
     owner:             (e.Owner && e.Owner.Name) || '—',
     reportingLevelRaw: rlRaw,   reportingLevel: cleanLabel(rlRaw) || '—',
-    impactDate:        e.C_ImpactDate || null,
+    dueDate:           e.DueDate || null,
+    nextReviewDate:    e.C_NextReviewDateR || null,
     description:       e.Description || '',
     rawId:             e.id || ''
   };
@@ -574,7 +577,6 @@ function toIssue(e) {
     ownerRaw:          (e.Owner && e.Owner.id) || '',
     owner:             (e.Owner && e.Owner.Name) || '—',
     reportingLevelRaw: rlRaw,  reportingLevel: cleanLabel(rlRaw) || '—',
-    impactDate:        ISSUE_IMPACTDATE_FIELD ? (e[ISSUE_IMPACTDATE_FIELD] || null) : null,
     dueDate:           e.DueDate || null,
     description:       e.Description || '',
     rawId:             e.id || ''
@@ -916,7 +918,7 @@ function descIcon(rec) {
 function renderRisks(risks, actionMap) {
   var tbody = document.getElementById('risks-body');
   if (!risks.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="no-data">No risks found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13"><div class="no-data">No risks found for this project.</div></td></tr>';
     document.getElementById('badge-risks').textContent = '0';
     return;
   }
@@ -936,12 +938,13 @@ function renderRisks(risks, actionMap) {
       (RISK_REPORTING_FIELD
         ? editCell(RISK_REPORTING_FIELD, r.rawId, r.reportingLevelRaw, esc(r.reportingLevel))
         : '<td>' + esc(r.reportingLevel || '—') + '</td>') +
-      editCell('C_ImpactDate',     r.rawId, r.impactDate || '',  '<span class="action-due ' + dueCls(r.impactDate) + '">' + fmtDate(r.impactDate) + '</span>') +
+      editCell('DueDate',           r.rawId, r.dueDate || '',        '<span class="action-due ' + dueCls(r.dueDate) + '">' + fmtDate(r.dueDate) + '</span>') +
+      editCell('C_NextReviewDateR', r.rawId, r.nextReviewDate || '', '<span class="action-due ' + dueCls(r.nextReviewDate) + '">' + fmtDate(r.nextReviewDate) + '</span>') +
       '<td class="row-action-cell" data-id="' + esc(r.rawId) + '" data-name="' + esc(r.name) + '">' +
         createIssueButtonHtml() +
       '</td>' +
       '</tr>' +
-      '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="12">' + actionsBlock(actions, r.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + r.id + '-actions"><td colspan="13">' + actionsBlock(actions, r.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-risks').textContent = risks.length;
 }
@@ -949,7 +952,7 @@ function renderRisks(risks, actionMap) {
 function renderIssues(issues, actionMap) {
   var tbody = document.getElementById('issues-body');
   if (!issues.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="no-data">No issues found for this project.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="no-data">No issues found for this project.</div></td></tr>';
     document.getElementById('badge-issues').textContent = '0';
     return;
   }
@@ -966,12 +969,9 @@ function renderIssues(issues, actionMap) {
       editCell('State',            issue.rawId, issue.statusRaw,         pill(issue.status)) +
       editCell('Owner',            issue.rawId, issue.ownerRaw,          esc(issue.owner)) +
       editCell('C_ReportingLevel', issue.rawId, issue.reportingLevelRaw, esc(issue.reportingLevel)) +
-      (ISSUE_IMPACTDATE_FIELD
-        ? editCell(ISSUE_IMPACTDATE_FIELD, issue.rawId, issue.impactDate || '', '<span class="action-due ' + dueCls(issue.impactDate) + '">' + fmtDate(issue.impactDate) + '</span>')
-        : '<td><span class="action-due">' + fmtDate(issue.impactDate) + '</span></td>') +
       editCell('DueDate',          issue.rawId, issue.dueDate || '', '<span class="action-due ' + dueCls(issue.dueDate) + '">' + fmtDate(issue.dueDate) + '</span>') +
       '</tr>' +
-      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="11">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
+      '<tr class="actions-row" id="' + issue.id + '-actions"><td colspan="10">' + actionsBlock(actions, issue.rawId) + '</td></tr>';
   }).join('');
   document.getElementById('badge-issues').textContent = issues.length;
 }
@@ -1403,7 +1403,8 @@ var NEW_ROW_DEFS = {
       { type: 'static', html: 'Draft' },                   /* new risks start as Draft */
       { type: 'user',   field: 'Owner' },
       (RISK_REPORTING_FIELD ? { type: 'pick', field: RISK_REPORTING_FIELD } : { type: 'static', html: '—' }),
-      { type: 'date',   field: 'C_ImpactDate', actions: true }
+      { type: 'date',   field: 'DueDate', actions: false },
+      { type: 'date',   field: 'C_NextReviewDateR', actions: true }
     ]
   },
   Issue: {
@@ -1417,7 +1418,6 @@ var NEW_ROW_DEFS = {
       { type: 'pick',   field: 'State' },
       { type: 'user',   field: 'Owner' },
       { type: 'pick',   field: 'C_ReportingLevel' },
-      { type: 'date',   field: ISSUE_IMPACTDATE_FIELD, actions: false },
       { type: 'date',   field: 'DueDate', actions: true }
     ]
   },
@@ -1706,8 +1706,8 @@ function reapplyFilters(tab) {
    f = record field to sort on, t = 's' string | 'n' number | 'd' date.
    Blank/"—" values always sort to the bottom (regardless of direction). */
 var SORT_COLS = {
-  risks:  { 3: { f: 'name', t: 's' }, 6: { f: 'riskRating', t: 'score' }, 7: { f: 'status', t: 's' }, 8: { f: 'owner', t: 's' }, 10: { f: 'impactDate', t: 'd' } },
-  issues: { 3: { f: 'name', t: 's' }, 5: { f: 'score',      t: 'score' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'impactDate', t: 'd' } }
+  risks:  { 3: { f: 'name', t: 's' }, 6: { f: 'riskRating', t: 'score' }, 7: { f: 'status', t: 's' }, 8: { f: 'owner', t: 's' }, 10: { f: 'dueDate', t: 'd' }, 11: { f: 'nextReviewDate', t: 'd' } },
+  issues: { 3: { f: 'name', t: 's' }, 5: { f: 'score',      t: 'score' }, 6: { f: 'status', t: 's' }, 7: { f: 'owner', t: 's' }, 9: { f: 'dueDate', t: 'd' } }
 };
 var SORT = { risks: { idx: null, dir: 1 }, issues: { idx: null, dir: 1 } };
 
@@ -1934,18 +1934,18 @@ function exportActionRow(a, len) {
 function exportRowsRisks() {
   var rows = [], kinds = [];
   DATA.risks.forEach(function (r) {
-    rows.push([r.sysId, r.name, r.probability, r.impact, r.riskRating, r.status, r.owner, r.reportingLevel, exportDateCell(r.impactDate)]);
+    rows.push([r.sysId, r.name, r.probability, r.impact, r.riskRating, r.status, r.owner, r.reportingLevel, exportDateCell(r.dueDate), exportDateCell(r.nextReviewDate)]);
     kinds.push('record');
-    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 9)); kinds.push('action'); });
+    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 10)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
 function exportRowsIssues() {
   var rows = [], kinds = [];
   DATA.issues.forEach(function (i) {
-    rows.push([i.sysId, i.name, i.impact, i.score, i.status, i.owner, i.reportingLevel, exportDateCell(i.impactDate), exportDateCell(i.dueDate)]);
+    rows.push([i.sysId, i.name, i.impact, i.score, i.status, i.owner, i.reportingLevel, exportDateCell(i.dueDate)]);
     kinds.push('record');
-    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 9)); kinds.push('action'); });
+    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 8)); kinds.push('action'); });
   });
   return { rows: rows, kinds: kinds };
 }
@@ -2037,10 +2037,10 @@ function exportToExcel() {
     ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
     workbookStyles() +
     buildSheetXml('Risks',
-      ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date'],
+      ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date'],
       exportRowsRisks(), 4) +
     buildSheetXml('Issues',
-      ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Impact Date', 'Due Date'],
+      ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date'],
       exportRowsIssues(), 3) +
     buildSheetXml('Change Requests',
       ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
@@ -2074,7 +2074,8 @@ var IMPORT_CFG = {
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
       { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
-      { hdr: 'Impact Date',     api: 'C_ImpactDate',     kind: 'date' }
+      { hdr: 'Due Date',        api: 'DueDate',            kind: 'date' },
+      { hdr: 'Next Review Date', api: 'C_NextReviewDateR', kind: 'date' }
     ]
   },
   'Issues': {
@@ -2085,7 +2086,6 @@ var IMPORT_CFG = {
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
       { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
-      { hdr: 'Impact Date',     api: 'C_ImpactDate',     kind: 'date' },
       { hdr: 'Due Date',        api: 'DueDate',          kind: 'date' }
     ]
   },
@@ -2111,17 +2111,6 @@ var IMPORT_CFG = {
   }
 })();
 
-/* Issue's Impact Date field differs / is absent in this tenant — point the
-   Issue import column at ISSUE_IMPACTDATE_FIELD, or drop it if there is none. */
-(function () {
-  var iff = IMPORT_CFG.Issues.fields;
-  for (var i = iff.length - 1; i >= 0; i--) {
-    if (iff[i].hdr === 'Impact Date') {
-      if (ISSUE_IMPACTDATE_FIELD) iff[i].api = ISSUE_IMPACTDATE_FIELD; else iff.splice(i, 1);
-    }
-  }
-})();
-
 /* Current raw value of an API field on a loaded record (for change detection). */
 function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
@@ -2131,13 +2120,13 @@ function recCurrent(entityType, rec, api) {
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
     if (RISK_REPORTING_FIELD && api === RISK_REPORTING_FIELD) return rec.reportingLevelRaw;
-    if (api === 'C_ImpactDate')     return rec.impactDate || '';
+    if (api === 'DueDate')          return rec.dueDate || '';
+    if (api === RISK_NEXTREVIEW_FIELD) return rec.nextReviewDate || '';
   } else if (entityType === 'Issue') {
     if (api === 'C_IssueImpact')    return rec.impactRaw;
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
     if (api === 'C_ReportingLevel') return rec.reportingLevelRaw;
-    if (ISSUE_IMPACTDATE_FIELD && api === ISSUE_IMPACTDATE_FIELD) return rec.impactDate || '';
     if (api === 'DueDate')          return rec.dueDate || '';
   } else if (entityType === 'EnhancementRequest') {
     if (api === 'State')   return rec.statusRaw;
@@ -2314,8 +2303,8 @@ function loadAndRender() {
   try {
     c = getContext();
   } catch (e) {
-    showError('risks-body', 12, e.message);
-    showError('issues-body', 11, e.message);
+    showError('risks-body', 13, e.message);
+    showError('issues-body', 10, e.message);
     showError('requests-body', 8, e.message);
     return Promise.reject(e);
   }
@@ -2323,10 +2312,9 @@ function loadAndRender() {
   var qRisks =
     "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
-    "C_ImpactDate, Description FROM Risk WHERE PlannedFor = '" + c.projId + "'";
+    "DueDate, C_NextReviewDateR, Description FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
     "SELECT SYSID, Title, C_IssueImpact, C_IssueScore, State, Owner.Name, C_ReportingLevel, DueDate, Description" +
-    (ISSUE_IMPACTDATE_FIELD ? ", " + ISSUE_IMPACTDATE_FIELD : "") +
     " FROM Issue WHERE PlannedFor = '" + c.projId + "'";
   var qRequests =
     "SELECT SYSID, Title, RequestType, State, CreatedBy.Name, CreatedOn, DueDate, Description " +
@@ -2380,8 +2368,8 @@ function loadAndRender() {
   .catch(function (err) {
     console.error('AdaptiveWork panel fetch error:', err);
     var msg = 'Failed to load data: ' + err.message;
-    showError('risks-body', 12, msg);
-    showError('issues-body', 11, msg);
+    showError('risks-body', 13, msg);
+    showError('issues-body', 10, msg);
     showError('requests-body', 8, msg);
   });
 }
@@ -2394,8 +2382,8 @@ setTimeout(function () {
   try {
     c = getContext();
   } catch (e) {
-    showError('risks-body', 12, e.message);
-    showError('issues-body', 11, e.message);
+    showError('risks-body', 13, e.message);
+    showError('issues-body', 10, e.message);
     showError('requests-body', 8, e.message);
     return;
   }
@@ -2409,8 +2397,8 @@ setTimeout(function () {
   diag('host ' + window.location.hostname + '  |  api ' + c.base);
   diag('project ' + c.projId + '  |  session ' + (!!c.sid));
 
-  showLoading('risks-body', 12);
-  showLoading('issues-body', 11);
+  showLoading('risks-body', 13);
+  showLoading('issues-body', 10);
   showLoading('requests-body', 8);
 
   /* Load real picklist option paths (non-blocking). Query the custom picklist
