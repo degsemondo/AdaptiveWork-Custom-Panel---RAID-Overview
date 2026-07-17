@@ -1024,6 +1024,8 @@ function renderAll(risks, issues, requests, actionMap) {
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
+  /* Re-apply any "Expand all" state (a refresh rebuilds the rows collapsed). */
+  Object.keys(EXPANDED_ALL).forEach(function (tab) { if (EXPANDED_ALL[tab]) setAllExpanded(tab, true); });
 }
 
 /* ---------- 12. Loading / error helpers ---------- */
@@ -1761,6 +1763,39 @@ var TAB_CFG = {
 };
 var ACTIVE_TAB = 'risks';
 
+/* Whether every action panel on a tab is currently expanded (per tab), so the
+   "Expand all" toolbar button can toggle + relabel, and the state can be
+   re-applied after a soft refresh (which rebuilds the rows collapsed). */
+var EXPANDED_ALL = { risks: false, issues: false, requests: false };
+
+/* Expand or collapse every action panel on a tab at once. */
+function setAllExpanded(tab, expand) {
+  var cfg = TAB_CFG[tab];
+  if (!cfg) return;
+  var tbody = document.getElementById(cfg.tbody);
+  if (!tbody) return;
+  tbody.querySelectorAll('.actions-row').forEach(function (row) { row.classList.toggle('show', expand); });
+  tbody.querySelectorAll('.expand-btn').forEach(function (btn) { btn.classList.toggle('open', expand); });
+}
+/* Toolbar "Expand all" — toggles all action panels on the active tab. */
+function toggleExpandAll() {
+  var tab = ACTIVE_TAB;
+  EXPANDED_ALL[tab] = !EXPANDED_ALL[tab];
+  setAllExpanded(tab, EXPANDED_ALL[tab]);
+  updateExpandAllBtn();
+}
+/* Sync the button's label + icon to the active tab's expand state. */
+function updateExpandAllBtn() {
+  var btn = document.getElementById('btn-expand-all');
+  if (!btn) return;
+  var on = EXPANDED_ALL[ACTIVE_TAB];
+  var lbl = btn.querySelector('.expand-all-label');
+  if (lbl) lbl.textContent = on ? 'Collapse all' : 'Expand all';
+  var icon = btn.querySelector('i');
+  if (icon) icon.className = on ? 'ti ti-chevrons-up' : 'ti ti-chevrons-down';
+  btn.setAttribute('aria-label', on ? 'Collapse all action items' : 'Expand all action items');
+}
+
 /* Switch tabs and point the shared toolbar at the newly active tab. */
 function setActiveTab(name) {
   if (!TAB_CFG[name]) return;
@@ -1791,6 +1826,8 @@ function setActiveTab(name) {
 
   /* Clear any prior search/status filtering on the now-visible tab. */
   document.querySelectorAll('#' + cfg.tbody + ' .data-row').forEach(function (row) { row.style.display = ''; });
+
+  updateExpandAllBtn();   /* reflect the newly-active tab's expand state */
 }
 
 function initUI() {
@@ -1850,6 +1887,9 @@ function initUI() {
 
   var nb = document.getElementById('btn-new');
   if (nb) nb.addEventListener('click', function () { TAB_CFG[ACTIVE_TAB].create(); });
+
+  var eab = document.getElementById('btn-expand-all');
+  if (eab) eab.addEventListener('click', toggleExpandAll);
 
   var ex = document.getElementById('btn-export');
   if (ex) ex.addEventListener('click', exportToExcel);

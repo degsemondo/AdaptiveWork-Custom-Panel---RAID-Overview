@@ -56,6 +56,11 @@
       </button>
     </div>
 
+    <button class="aw-btn" id="btn-expand-all" aria-label="Expand all action items">
+      <i class="ti ti-chevrons-down" style="font-size:14px" aria-hidden="true"></i>
+      <span class="expand-all-label">Expand all</span>
+    </button>
+
     <input type="file" id="aw-import-file" accept=".xls,.xml" style="display:none" />
     <button class="aw-btn" id="btn-import" aria-label="Import from Excel">
       <i class="ti ti-file-import" style="font-size:14px" aria-hidden="true"></i>
