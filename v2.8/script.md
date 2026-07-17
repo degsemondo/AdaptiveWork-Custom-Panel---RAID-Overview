@@ -1018,6 +1018,12 @@ function renderRequests(requests, actionMap) {
 
 /* Collect picklist options from loaded data, then render everything. */
 function renderAll(risks, issues, requests, actionMap) {
+  /* Remember which action panels are currently open (by their stable row id,
+     "<record>-actions") so a soft refresh — e.g. after saving an action —
+     doesn't snap them shut. Captured BEFORE the tbodies are rebuilt. */
+  var openRows = {};
+  document.querySelectorAll('.actions-row.show').forEach(function (row) { if (row.id) openRows[row.id] = true; });
+
   DATA = { risks: risks, issues: issues, requests: requests, actionMap: actionMap };
   PICK = {};
   risks.forEach(function (r) {
@@ -1047,6 +1053,14 @@ function renderAll(risks, issues, requests, actionMap) {
   renderRequests(requests, actionMap);
   /* Re-apply any "Expand all" state (a refresh rebuilds the rows collapsed). */
   Object.keys(EXPANDED_ALL).forEach(function (tab) { if (EXPANDED_ALL[tab]) setAllExpanded(tab, true); });
+  /* Re-open any individually-expanded panels that survived into the new render. */
+  Object.keys(openRows).forEach(function (id) {
+    var row = document.getElementById(id);
+    if (!row) return;
+    row.classList.add('show');
+    var btn = document.querySelector('.expand-btn[data-target="' + id + '"]');
+    if (btn) btn.classList.add('open');
+  });
 }
 
 /* ---------- 12. Loading / error helpers ---------- */
