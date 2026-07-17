@@ -81,10 +81,6 @@ var RISK_NEXTREVIEW_FIELD = 'C_NextReviewDateR';
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
 
-/* True until the first successful render — gates one-time diagnostics so a
-   soft refresh (loadAndRender) doesn't keep appending to the diagnostics box. */
-var FIRST_RENDER = true;
-
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
 /* Authoritative picklist options fetched from AdaptiveWork metadata
@@ -125,13 +121,11 @@ function loadCurrentUser() {
   var c = getContext();
   var paths = ['/V2.0/services/data/getSessionInfo', '/V2.0/services/authentication/getSessionInfo'];
   function tryPath(i) {
-    if (i >= paths.length) { diag('current user: (could not resolve)'); return Promise.resolve(); }
+    if (i >= paths.length) { return Promise.resolve(); }
     var url = c.base.replace(/\/$/, '') + paths[i];
     return fetch(url, { headers: { 'Authorization': 'Session ' + c.sid } })
       .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
       .then(function (j) {
-        /* DIAGNOSTIC: show the raw shape so we use the right id/name fields. */
-        diag('getSessionInfo ok [' + paths[i] + ']: ' + JSON.stringify(j).slice(0, 300));
         var uid = j.userId || j.UserId || (j.user && (j.user.id || j.user.Id)) ||
                   (j.sessionInfo && (j.sessionInfo.userId || j.sessionInfo.UserId)) || '';
         if (!uid) throw new Error('no userId in response');
@@ -146,13 +140,11 @@ function loadCurrentUser() {
         if (directName) {
           CURRENT_USER.name = directName;
           rememberUser(uid, directName);
-          diag('current user: ' + directName + '  (' + uid + ')');
           return;
         }
         return fetchUserName(c.base, c.sid, uid).then(function (name) {
           CURRENT_USER.name = name;
           rememberUser(uid, name);
-          diag('current user: ' + name + '  (' + uid + ')');
         });
       })
       .catch(function () { return tryPath(i + 1); });
@@ -462,15 +454,7 @@ function loadPicklistValues() {
     }
     return Promise.resolve().then(function () { return tryNext(0); });
   });
-  return Promise.all(jobs).then(function (results) {
-    console.info('[RAID panel] picklist values:', results);
-    results.forEach(function (r) {
-      var sample = (PICK_META[r.field] && PICK_META[r.field][0]) ? PICK_META[r.field][0].raw : '?';
-      diag('picklist ' + r.field + ' [' + r.type + ']: ' +
-        (r.error ? 'none — tried ' + r.error : (r.count + ' value(s); sends e.g. ' + sample)));
-    });
-    return results;
-  });
+  return Promise.all(jobs);
 }
 
 /* ---------- 2. CZQL fetch wrapper ---------- */
@@ -1055,29 +1039,12 @@ function renderAll(risks, issues, requests, actionMap) {
   Object.keys(actionMap || {}).forEach(function (pid) {
     actionMap[pid].forEach(function (a) { addPick('ActionItemState', a.stateRaw); });
   });
-  /* DIAGNOSTIC (first render only, so soft refreshes don't grow the box):
-     resolve the Risk "Open" path + sample raw values. */
-  if (FIRST_RENDER) {
-    diag('create State "Draft" -> ' + (pickRawByLabel('State', ['Draft']) || '(not resolvable)'));
-  }
   /* Keep any active column sort applied across (soft) refreshes. */
   applySort('risks');
   applySort('issues');
   renderRisks(risks, actionMap);
   renderIssues(issues, actionMap);
   renderRequests(requests, actionMap);
-
-  if (FIRST_RENDER) {
-    if (risks[0]) diag('sample Risk raw: prob=' + (risks[0].probabilityRaw || '(empty)') +
-      '  impact=' + (risks[0].impactRaw || '(empty)') + '  reporting=' + (risks[0].reportingLevelRaw || '(empty)'));
-    if (issues[0]) diag('sample Issue raw: impact=' + (issues[0].impactRaw || '(empty)') +
-      '  reporting=' + (issues[0].reportingLevelRaw || '(empty)'));
-    var ais = (PICK_META.ActionItemState && PICK_META.ActionItemState.length)
-      ? PICK_META.ActionItemState.map(function (o) { return o.label || cleanLabel(o.raw); })
-      : (PICK.ActionItemState || []).map(function (r) { return cleanLabel(r); });
-    diag('ActionItemState values: ' + (ais.join(', ') || '(none yet — enum query pending)'));
-    FIRST_RENDER = false;
-  }
 }
 
 /* ---------- 12. Loading / error helpers ---------- */
@@ -1088,37 +1055,6 @@ function showLoading(tbodyId, cols) {
 function showError(tbodyId, cols, msg) {
   document.getElementById(tbodyId).innerHTML =
     '<tr><td colspan="' + cols + '"><div class="no-data" style="color:#A32D2D">' + esc(msg) + '</div></td></tr>';
-}
-
-/* On-screen diagnostics — because console.info is often hidden by the console's
-   level filter (esp. on locked-down machines). Renders a dismissible box at the
-   top of the panel so load/picklist results are readable (and pasteable). */
-var DIAG_LINES = [];
-function diag(line) {
-  DIAG_LINES.push(line);
-  var box = document.getElementById('aw-diag');
-  if (!box) {
-    box = document.createElement('div');
-    box.id = 'aw-diag';
-    box.style.cssText = 'margin:8px 12px;padding:8px 24px 8px 10px;border:1px solid #dadce0;' +
-      'border-radius:4px;background:#fffbe6;color:#202124;font:12px/1.45 monospace;' +
-      'white-space:pre-wrap;position:relative;';
-    var close = document.createElement('button');
-    close.textContent = '×';
-    close.title = 'Dismiss diagnostics';
-    close.setAttribute('aria-label', 'Dismiss diagnostics');
-    close.style.cssText = 'position:absolute;top:2px;right:6px;border:none;background:none;' +
-      'font-size:16px;line-height:1;cursor:pointer;color:#5f6368;';
-    close.addEventListener('click', function () { box.parentNode && box.parentNode.removeChild(box); });
-    var body = document.createElement('div');
-    body.id = 'aw-diag-body';
-    box.appendChild(close);
-    box.appendChild(body);
-    var panel = document.querySelector('.aw-panel') || document.body;
-    panel.insertBefore(box, panel.firstChild);
-  }
-  var bodyEl = document.getElementById('aw-diag-body');
-  if (bodyEl) bodyEl.textContent = 'RAID panel diagnostics\n' + DIAG_LINES.join('\n');
 }
 
 /* ---------- 13. Context + API host ---------- */
@@ -2365,13 +2301,6 @@ function loadAndRender() {
       return isShownRiskState(cleanLabel(pickRaw(e.State)));
     });
     var risks    = riskRows.map(toRisk);
-    /* DIAGNOSTIC (first render only): how many risks came back vs shown + States. */
-    if (FIRST_RENDER) {
-      var seenStates = {};
-      results[0].forEach(function (e) { var s = cleanLabel(pickRaw(e.State)) || '(blank)'; seenStates[s] = (seenStates[s] || 0) + 1; });
-      diag('risks: ' + results[0].length + ' returned, ' + riskRows.length + ' shown (filter ' + RISK_STATES.join('/') + ')');
-      diag('risk States seen: ' + (Object.keys(seenStates).map(function (k) { return k + '×' + seenStates[k]; }).join(', ') || 'none'));
-    }
     var issues   = results[1].map(toIssue);
     /* Requests tab shows Change Requests only (RequestType = 'Change Request'). */
     var reqRows  = results[2].filter(function (e) {
@@ -2412,24 +2341,15 @@ function loadAndRender() {
 setTimeout(function () {
   initUI();
 
-  var c;
+  /* Validate the injected context up front; each loader re-reads it as needed. */
   try {
-    c = getContext();
+    getContext();
   } catch (e) {
     showError('risks-body', 13, e.message);
     showError('issues-body', 10, e.message);
     showError('requests-body', 8, e.message);
     return;
   }
-
-  /* DIAGNOSTIC: confirm the resolved API host and the project id injected by the
-     Data field. After moving environments, a wrong host or a stale/empty project
-     id from the Data macro is a prime suspect — check these in the console. */
-  console.info('[RAID panel] app host:', window.location.hostname,
-    '| API base:', c.base, '| project (PlannedFor):', c.projId,
-    '| session set:', !!c.sid);
-  diag('host ' + window.location.hostname + '  |  api ' + c.base);
-  diag('project ' + c.projId + '  |  session ' + (!!c.sid));
 
   showLoading('risks-body', 13);
   showLoading('issues-body', 10);
