@@ -1803,14 +1803,20 @@ var ACTIVE_TAB = 'risks';
    re-applied after a soft refresh (which rebuilds the rows collapsed). */
 var EXPANDED_ALL = { risks: false, issues: false, requests: false };
 
-/* Expand or collapse every action panel on a tab at once. */
+/* Expand or collapse every action panel on a tab at once. When expanding, only
+   open rows that actually have action items (skip the "No actions recorded."
+   ones); collapse always clears every row. */
 function setAllExpanded(tab, expand) {
   var cfg = TAB_CFG[tab];
   if (!cfg) return;
   var tbody = document.getElementById(cfg.tbody);
   if (!tbody) return;
-  tbody.querySelectorAll('.actions-row').forEach(function (row) { row.classList.toggle('show', expand); });
-  tbody.querySelectorAll('.expand-btn').forEach(function (btn) { btn.classList.toggle('open', expand); });
+  tbody.querySelectorAll('.actions-row').forEach(function (row) {
+    var want = expand && !!row.querySelector('.action-item');
+    row.classList.toggle('show', want);
+    var btn = tbody.querySelector('.expand-btn[data-target="' + row.id + '"]');
+    if (btn) btn.classList.toggle('open', want);
+  });
 }
 /* Toolbar "Expand all" — toggles all action panels on the active tab. */
 function toggleExpandAll() {
