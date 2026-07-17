@@ -25,10 +25,10 @@ function isShownRiskState(label) {
 var RISK_STATE_OPTIONS = ['Draft', 'Open', 'Closed'];
 
 /* Selectable states when editing an ActionItem; new actions default to Open.
-   This tenant's ActionItemState enum is Open / Completed / Cancelled /
-   In-Progress / Rejected — it has NO "Closed", so the done state is Completed.
-   Only these two are offered (current value kept if it's another state). */
-var ACTION_STATE_OPTIONS = ['Open', 'Completed'];
+   This tenant's ActionItemState enum is Open / Closed / Stuck (confirmed with the
+   group). These are offered (current value kept if it's another state); the done
+   state is Closed. */
+var ACTION_STATE_OPTIONS = ['Open', 'Closed', 'Stuck'];
 
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
@@ -597,7 +597,7 @@ function toAction(e) {
     dueDate:  e.DueDate || null,
     stateRaw: pickRaw(e.ActionItemState),
     status:   statusLabel,
-    statusAction: e.C_StatusAction || '',
+    statusAction: e.C_SummaryUpdateAction || '',
     parentId: (e.Container && e.Container.id) || ''
   };
 }
@@ -680,7 +680,7 @@ function actionStatusInfo(stateRaw, dueIso) {
   return { label: label, done: isDone, late: isLate };
 }
 /* Inner HTML of an action row in display mode (icon, name, owner, status, tools).
-   statusAction = free-text C_StatusAction value (drives the status pop-out icon's tint). */
+   statusAction = free-text C_SummaryUpdateAction value (drives the status pop-out icon's tint). */
 function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction) {
   var s = actionStatusInfo(stateRaw, dueIso);
   var iconCol = s.done ? '#3B6D11' : '#185FA5';
@@ -842,10 +842,10 @@ function deleteAction(el) {
     }
   });
 }
-/* Pop-out editor for an action's free-text Status update (C_StatusAction) — the
+/* Pop-out editor for an action's free-text Status update (C_SummaryUpdateAction) — the
    same centered, non-dimming textarea dialog used for a Risk's Description.
    Reads/writes the value from the row's data-status-action attribute + the
-   ActionItem's C_StatusAction field, then soft-refreshes. */
+   ActionItem's C_SummaryUpdateAction field, then soft-refreshes. */
 function openActionStatus(el) {
   if (!el) return;
   var actionId = el.getAttribute('data-action-id');
@@ -859,7 +859,7 @@ function openActionStatus(el) {
       if (String(text) === String(current)) return;   /* unchanged */
       var c;
       try { c = getContext(); } catch (e) { alert('Cannot save status: ' + e.message); return; }
-      updateObject(c.base, c.sid, actionId, { C_StatusAction: text })
+      updateObject(c.base, c.sid, actionId, { C_SummaryUpdateAction: text })
         .then(function () { el.setAttribute('data-status-action', text); return loadAndRender(); })
         .catch(function (err) { alert('Failed to save status: ' + err.message); });
     }
@@ -2370,7 +2370,7 @@ function loadAndRender() {
 
     var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
     var qActions =
-      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, C_StatusAction, Container.id " +
+      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
       "FROM ActionItem WHERE Container IN (" + inList + ")";
 
     return czql(c.base, c.sid, qActions).then(function (actionEntities) {
