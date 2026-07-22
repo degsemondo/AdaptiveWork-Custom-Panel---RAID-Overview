@@ -1492,9 +1492,12 @@ function saveNewRow(row) {
     var rt = changeRequestTypeRaw();
     if (rt) fields.RequestType = rt;
   }
-  /* New Risks start with State = Draft. */
+  /* New Risks start with State = Draft. Use rawForLabel (not pickRawByLabel) so
+     that on an empty panel — where no loaded record reveals a "Draft" path — we
+     still derive /CaseState/Draft from the State prefix. Otherwise no State is
+     sent and AdaptiveWork defaults the new risk to "Submitted". */
   if (entityType === 'Risk' && !fields.State) {
-    var draftState = pickRawByLabel('State', ['Draft']);
+    var draftState = rawForLabel('State', 'Draft', '/CaseState/');
     if (draftState) fields.State = draftState;
   }
   if (!fields.Title) {
