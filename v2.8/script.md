@@ -67,7 +67,7 @@ var RISK_REPORTING_FIELD = 'C_ReportingLevelR';
 /* Impact field API name on the RISK entity — DIFFERS from the panel's original
    C_Impact. Confirmed on eu.clarizentb.com: Risk Impact field = C_ImpactR
    (picklist class C_RiskImpactR). (Issue Impact is C_IssueImpact ->
-   C_IssueIssueImpact; Risk Probability is C_Likelihood -> C_RiskLikelihood.) */
+   C_IssueIssueImpact; Risk Probability is C_Probability -> C_RiskProbability.) */
 var RISK_IMPACT_FIELD = 'C_ImpactR';
 
 /* Issue Impact Date has been removed from the panel — kept as '' so the (now
@@ -86,7 +86,7 @@ var PICK = {};
 /* Authoritative picklist options fetched from AdaptiveWork metadata
    (field -> [{ raw, label }]). Preferred over guessing a "/Type" prefix. */
 var PICK_META = {};
-var PICK_FIELDS = ['C_Impact', 'C_ImpactR', 'C_Likelihood', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'C_ReportingLevelR', 'ActionItemState'];
+var PICK_FIELDS = ['C_Impact', 'C_ImpactR', 'C_Probability', 'C_IssueImpact', 'State', 'Priority', 'RequestType', 'C_ReportingLevel', 'C_ReportingLevelR', 'ActionItemState'];
 function isPick(f) { return PICK_FIELDS.indexOf(f) > -1; }
 
 /* Status-like fields rendered as a coloured pill; date fields as a formatted date. */
@@ -223,7 +223,7 @@ var PICK_OPTIONS = {
   C_Impact:         ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
   C_ImpactR:        ['1 - Minor', '2 - Moderate', '3 - Moderate+', '4 - Significant', '5 - Significant+', '6 - Severe'],
   C_IssueImpact:    ['1 - Minor', '2 - Moderate', '3 - Moderate +', '4 - Significant', '5 - Significant +', '6 - Severe'],
-  C_Likelihood:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
+  C_Probability:     ['1 - Unlikely', '2 - Possible', '3 - Possible +', '4 - Likely', '5 - Likely +', '6 - Very Likely'],
   C_ReportingLevel:  ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team'],
   C_ReportingLevelR: ['1 - EFDC', '2 - Portfolio', '3 - Project Board', '4 - Project Team']
 };
@@ -234,7 +234,7 @@ var PICK_OPTIONS = {
    path to save; its Name is the label. Map: field -> CANDIDATE type entity names
    (tried in order; first one that exists + returns values wins).
    All confirmed from each field's "Class API Name" on eu.clarizentb.com:
-     C_Impact -> C_RiskImpact, C_Likelihood -> C_RiskProbability,
+     C_Impact -> C_RiskImpact, C_Probability -> C_RiskProbability,
      C_IssueImpact -> C_IssueIssueImpact,
      C_ReportingLevel (Issue) -> C_IssueReportingLevel,
      C_ReportingLevelR (Risk) -> C_RiskReportingLevelR.
@@ -242,7 +242,7 @@ var PICK_OPTIONS = {
    from the loaded data instead, so they aren't listed here.) */
 var PICK_LIST_TYPES = {
   C_ImpactR:         ['C_RiskImpactR'],
-  C_Likelihood:      ['C_RiskLikelihood'],
+  C_Probability:      ['C_RiskProbability', 'C_RiskLikelihood'],
   C_IssueImpact:     ['C_IssueIssueImpact'],
   C_ReportingLevel:  ['C_IssueReportingLevel'],
   C_ReportingLevelR: ['C_RiskReportingLevelR'],
@@ -525,7 +525,7 @@ function esc(s) {
 /* ---------- 4. Normalisers ---------- */
 function toRisk(e) {
   var impRaw  = pickRaw(e[RISK_IMPACT_FIELD]);
-  var probRaw = pickRaw(e.C_Likelihood);
+  var probRaw = pickRaw(e.C_Probability);
   var rateRaw = pickRaw(e.C_RiskRating);
   var stRaw   = pickRaw(e.State);
   var rlRaw   = RISK_REPORTING_FIELD ? pickRaw(e[RISK_REPORTING_FIELD]) : '';
@@ -947,7 +947,7 @@ function renderRisks(risks, actionMap) {
       editCell('State',            r.rawId, r.statusRaw,         pill(r.status)) +
       editCell('Title',            r.rawId, r.name,              esc(r.name)) +
       '<td style="text-align:center">' + descIcon(r) + '</td>' +
-      editCell('C_Likelihood',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
+      editCell('C_Probability',     r.rawId, r.probabilityRaw,    esc(r.probability)) +
       editCell(RISK_IMPACT_FIELD,  r.rawId, r.impactRaw,         esc(r.impact)) +
       '<td><span class="heatmap ' + hm + '">' + esc(r.riskRating) + '</span></td>' +
       editCell('Owner',            r.rawId, r.ownerRaw,          esc(r.owner)) +
@@ -1028,7 +1028,7 @@ function renderAll(risks, issues, requests, actionMap) {
   PICK = {};
   risks.forEach(function (r) {
     addPick(RISK_IMPACT_FIELD, r.impactRaw);
-    addPick('C_Likelihood', r.probabilityRaw);
+    addPick('C_Probability', r.probabilityRaw);
     addPick('State', r.statusRaw);
     if (RISK_REPORTING_FIELD) addPick(RISK_REPORTING_FIELD, r.reportingLevelRaw);
     rememberUser(r.ownerRaw, r.owner);
@@ -1382,7 +1382,7 @@ var NEW_ROW_DEFS = {
       { type: 'static', html: 'Draft' },                   /* Status — new risks start as Draft */
       { type: 'text',   field: 'Title', placeholder: 'Risk name' },
       { type: 'static', html: '' },                        /* Description (icon appears once saved) */
-      { type: 'pick',   field: 'C_Likelihood' },            /* Probability */
+      { type: 'pick',   field: 'C_Probability' },            /* Probability */
       { type: 'pick',   field: RISK_IMPACT_FIELD },         /* Impact */
       { type: 'static', html: '—' },                       /* Score (auto-calculated) */
       { type: 'user',   field: 'Owner' },
@@ -1659,7 +1659,7 @@ function commitEdit(cell) {
   updateField(id, field, newValue)
     .then(function () {
       /* Impact/Probability drive the computed Score — soft-refresh to pick it up. */
-      if (field === RISK_IMPACT_FIELD || field === 'C_Likelihood' || field === 'C_IssueImpact') { loadAndRender(); return; }
+      if (field === RISK_IMPACT_FIELD || field === 'C_Probability' || field === 'C_IssueImpact') { loadAndRender(); return; }
       cell.setAttribute('data-value', newValue);
       cell.classList.remove('saving');
       cell.innerHTML = cellDisplay(field, newValue);
@@ -2102,7 +2102,7 @@ var IMPORT_CFG = {
     entityType: 'Risk', list: 'risks',
     fields: [
       { hdr: 'Risk name',       api: 'Title',            kind: 'text' },
-      { hdr: 'Probability',     api: 'C_Likelihood',     kind: 'pick' },
+      { hdr: 'Probability',     api: 'C_Probability',     kind: 'pick' },
       { hdr: 'Impact',          api: 'C_ImpactR',        kind: 'pick' },
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
@@ -2148,7 +2148,7 @@ var IMPORT_CFG = {
 function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
   if (entityType === 'Risk') {
-    if (api === 'C_Likelihood')     return rec.probabilityRaw;
+    if (api === 'C_Probability')     return rec.probabilityRaw;
     if (api === RISK_IMPACT_FIELD)  return rec.impactRaw;
     if (api === 'State')            return rec.statusRaw;
     if (api === 'Owner')            return rec.ownerRaw;
@@ -2343,7 +2343,7 @@ function loadAndRender() {
   }
 
   var qRisks =
-    "SELECT SYSID, Title, C_Likelihood, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
+    "SELECT SYSID, Title, C_Probability, " + RISK_IMPACT_FIELD + ", C_RiskRating, State, Owner.Name, " +
     (RISK_REPORTING_FIELD ? RISK_REPORTING_FIELD + ", " : "") +
     "DueDate, C_NextReviewDateR, Description FROM Risk WHERE PlannedFor = '" + c.projId + "'";
   var qIssues =
@@ -2445,6 +2445,6 @@ setTimeout(function () {
 | Create returned HTTP 500 (wrong `/upsert` body) | Create now uses `PUT /objects/{EntityType}`; update uses `POST /objects/{EntityType}/{id}` — the documented REST endpoints |
 | New item created but not linked to the project | After creating the Risk/Issue/Request, a `RelatedWork` record is created (`Case` = new item id, `WorkItem` = project id) to tie it to the project view |
 | "New …" used an ugly `prompt()` pop-up | Clicking a "New …" button now inserts an inline editable draft row at the top of the table (name + picklists + due date, Save/Cancel, Enter to save / Esc to cancel) |
-| Impact / Probability dropdowns only listed values already in use | Canonical, fully-ordered option lists for `C_Impact` (1 - Minor … 6 - Severe) and `C_Likelihood` (1 - Unlikely … 6 - Very Likely) always show; raw `/Type/Value` path is reused from data or rebuilt from the detected prefix. "Likelihood" column header renamed to "Probability" |
+| Impact / Probability dropdowns only listed values already in use | Canonical, fully-ordered option lists for `C_Impact` (1 - Minor … 6 - Severe) and `C_Probability` (1 - Unlikely … 6 - Very Likely) always show; raw `/Type/Value` path is reused from data or rebuilt from the detected prefix. "Likelihood" column header renamed to "Probability" |
 | Owner was read-only text | Owner (`AssignedTo`) is now an editable **type-ahead** of system users — searches server-side (`User WHERE Name LIKE '%…%'`, debounced, 2+ chars) instead of bulk-loading everyone. Works on existing rows and the new-item draft row; sends the `/User/…` id |
 ```
