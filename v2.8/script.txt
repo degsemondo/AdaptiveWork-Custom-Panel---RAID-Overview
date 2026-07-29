@@ -631,6 +631,12 @@ function pill(label) {
 function riskRatingHeatMap(val) {
   var s = String(val == null ? '' : val).toLowerCase();
   if (!s || s === '—' || s === 'n/a') return 'heatmap-neutral';
+  /* Calculated Risk rating (C_RiskRating) is a RAG word — Green / Yellow /
+     Amber / Red — derived from Impact x Probability. Match these first. */
+  if (s.indexOf('green') > -1)  return 'heatmap-rag-green';
+  if (s.indexOf('amber') > -1)  return 'heatmap-rag-amber';
+  if (s.indexOf('yellow') > -1) return 'heatmap-rag-yellow';
+  if (s.indexOf('red') > -1)    return 'heatmap-rag-red';
   var num = parseFloat(s.replace(/[^0-9.]/g, ''));
   if (!isNaN(num) && /\d/.test(s)) {
     if (num >= 20) return 'heatmap-critical';
@@ -1683,7 +1689,8 @@ function scoreVal(v) {
   var s = String(v == null ? '' : v);
   var num = parseFloat(s.replace(/[^0-9.\-]/g, ''));
   if (!isNaN(num) && /\d/.test(s)) return num;
-  var rank = { 'heatmap-very-low': 1, 'heatmap-low': 2, 'heatmap-medium': 3, 'heatmap-high': 4, 'heatmap-very-high': 5, 'heatmap-critical': 6 };
+  var rank = { 'heatmap-rag-green': 1, 'heatmap-rag-yellow': 2, 'heatmap-rag-amber': 3, 'heatmap-rag-red': 4,
+               'heatmap-very-low': 1, 'heatmap-low': 2, 'heatmap-medium': 3, 'heatmap-high': 4, 'heatmap-very-high': 5, 'heatmap-critical': 6 };
   return rank[riskRatingHeatMap(v)] || 0;
 }
 function sortIsEmpty(v, t) {
@@ -1983,6 +1990,8 @@ function xlCell(v, styleId) {
 /* Risk Rating value -> style id (mirrors the on-screen heat map). */
 function exportHeatStyle(value) {
   var map = {
+    'heatmap-rag-green': 'hmRagGreen', 'heatmap-rag-yellow': 'hmRagYellow',
+    'heatmap-rag-amber': 'hmRagAmber', 'heatmap-rag-red': 'hmRagRed',
     'heatmap-very-low': 'hmVeryLow', 'heatmap-low': 'hmLow', 'heatmap-medium': 'hmMedium',
     'heatmap-high': 'hmHigh', 'heatmap-very-high': 'hmVeryHigh', 'heatmap-critical': 'hmCritical'
   };
@@ -2009,6 +2018,7 @@ function workbookStyles() {
     '<Style ss:ID="rec"><Alignment ss:Vertical="Center"/>' + border() + '</Style>' +
     '<Style ss:ID="act"><Font ss:Italic="1" ss:Color="#5F6368"/>' +
       '<Interior ss:Color="#FAFBFC" ss:Pattern="Solid"/>' + border() + '</Style>' +
+    heat('hmRagGreen', '#2E7D32') + heat('hmRagYellow', '#C9A000') + heat('hmRagAmber', '#E67E00') + heat('hmRagRed', '#C62828') +
     heat('hmVeryLow', '#4CAF50') + heat('hmLow', '#8BC34A') + heat('hmMedium', '#FF9800') +
     heat('hmHigh', '#FF7043') + heat('hmVeryHigh', '#F4511E') + heat('hmCritical', '#D32F2F') +
     '</Styles>';

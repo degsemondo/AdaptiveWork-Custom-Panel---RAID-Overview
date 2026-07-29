@@ -516,6 +516,12 @@ table.aw-table tbody tr:hover {
 .heatmap-critical { background: #d32f2f; }
 .heatmap-neutral { background: #9e9e9e; }
 
+/* Calculated Risk rating (C_RiskRating) RAG scale: Green / Yellow / Amber / Red */
+.heatmap-rag-green  { background: #2e7d32; }
+.heatmap-rag-yellow { background: #c9a000; }
+.heatmap-rag-amber  { background: #e67e00; }
+.heatmap-rag-red    { background: #c62828; }
+
 /* ── ID deep link ── */
 .id-link {
   color: #8B3A62;
