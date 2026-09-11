@@ -781,7 +781,7 @@ function saveAction(el) {
   if (!el) return;
   var nameEl = el.querySelector('.act-f-name');
   var name = nameEl ? String(nameEl.value).trim() : '';
-  if (!name) { alert('Action name is required.'); if (nameEl) nameEl.focus(); return; }
+  if (!name) { showToast('Action name is required.'); if (nameEl) nameEl.focus(); return; }
   var ownerEl = el.querySelector('.act-f-owner');
   var ownerId = ownerEl ? (ownerEl.getAttribute('data-user-id') || '') : '';
   var dueEl = el.querySelector('.act-f-due');
@@ -795,7 +795,7 @@ function saveAction(el) {
   if (state) fields.ActionItemState = state;
 
   var c;
-  try { c = getContext(); } catch (e) { alert('Cannot save action: ' + e.message); return; }
+  try { c = getContext(); } catch (e) { showToast('Cannot save action: ' + e.message, { error: true }); return; }
   var btn = el.querySelector('.act-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
@@ -809,7 +809,7 @@ function saveAction(el) {
   }
   p.then(function () { return loadAndRender(); })
    .catch(function (err) {
-     alert('Failed to save action: ' + err.message);
+     showToast('Failed to save action: ' + err.message, { error: true });
      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
    });
 }
@@ -825,10 +825,10 @@ function deleteAction(el) {
     danger: true,
     onConfirm: function () {
       var c;
-      try { c = getContext(); } catch (e) { alert('Cannot delete action: ' + e.message); return; }
+      try { c = getContext(); } catch (e) { showToast('Cannot delete action: ' + e.message, { error: true }); return; }
       deleteObject(c.base, c.sid, actionId)
         .then(function () { return loadAndRender(); })
-        .catch(function (err) { alert('Failed to delete action: ' + err.message); });
+        .catch(function (err) { showToast('Failed to delete action: ' + err.message, { error: true }); });
     }
   });
 }
@@ -839,7 +839,7 @@ function deleteAction(el) {
 function openActionStatus(el) {
   if (!el) return;
   var actionId = el.getAttribute('data-action-id');
-  if (!actionId) { alert('Save the action first, then add a status update.'); return; }
+  if (!actionId) { showToast('Save the action first, then add a status update.'); return; }
   var current = el.getAttribute('data-status-action') || '';
   var name = el.getAttribute('data-name') || '';
   showDescriptionDialog({
@@ -848,10 +848,10 @@ function openActionStatus(el) {
     onSave: function (text) {
       if (String(text) === String(current)) return;   /* unchanged */
       var c;
-      try { c = getContext(); } catch (e) { alert('Cannot save status: ' + e.message); return; }
+      try { c = getContext(); } catch (e) { showToast('Cannot save status: ' + e.message, { error: true }); return; }
       updateObject(c.base, c.sid, actionId, { C_SummaryUpdateAction: text })
         .then(function () { el.setAttribute('data-status-action', text); return loadAndRender(); })
-        .catch(function (err) { alert('Failed to save status: ' + err.message); });
+        .catch(function (err) { showToast('Failed to save status: ' + err.message, { error: true }); });
     }
   });
 }
@@ -1202,6 +1202,25 @@ function showConfirm(opts) {
   var okBtn = pop.querySelector('.aw-c-ok'); if (okBtn) okBtn.focus();
 }
 
+/* In-panel TOAST — the non-jarring replacement for window.alert(). A small card
+   sits bottom-centre, never dims the page, never blocks, and auto-dismisses
+   (click it to dismiss early). Newlines in the message are preserved.
+   opts = { error?: bool, duration?: ms }. */
+function showToast(message, opts) {
+  opts = opts || {};
+  var t = document.createElement('div');
+  t.setAttribute('role', 'status');
+  t.style.cssText = 'position:fixed;z-index:2100;left:50%;bottom:24px;transform:translateX(-50%);' +
+    'max-width:560px;padding:10px 16px;border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,0.22);' +
+    'font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;white-space:pre-line;' +
+    'cursor:pointer;color:#fff;background:' + (opts.error ? '#A32D2D' : '#202124') + ';';
+  t.textContent = String(message == null ? '' : message);
+  function dismiss() { if (t.parentNode) t.parentNode.removeChild(t); }
+  t.addEventListener('click', dismiss);
+  document.body.appendChild(t);
+  setTimeout(dismiss, opts.duration || (opts.error ? 7000 : 4500));
+}
+
 /* Description editor — a plain textarea in a centered, non-dimming dialog (a
    transparent click-catcher dismisses it, so the panel isn't greyed out).
    Esc / outside-click / Cancel discards; Save commits. opts = { title, value, onSave }. */
@@ -1258,10 +1277,10 @@ function openDescription(rawId) {
     onSave: function (text) {
       if (String(text) === String(rec.description || '')) return;   /* unchanged */
       var c;
-      try { c = getContext(); } catch (e) { alert('Cannot save description: ' + e.message); return; }
+      try { c = getContext(); } catch (e) { showToast('Cannot save description: ' + e.message, { error: true }); return; }
       updateObject(c.base, c.sid, rec.rawId, { Description: text })
         .then(function () { rec.description = text; return loadAndRender(); })
-        .catch(function (err) { alert('Failed to save description: ' + err.message); });
+        .catch(function (err) { showToast('Failed to save description: ' + err.message, { error: true }); });
     }
   });
 }
@@ -1344,7 +1363,7 @@ function linkToProject(base, sid, caseId, projId) {
 
 function createEntity(entityType, fields, label) {
   var c;
-  try { c = getContext(); } catch (e) { alert('Cannot create ' + label + ': ' + e.message); return Promise.reject(e); }
+  try { c = getContext(); } catch (e) { showToast('Cannot create ' + label + ': ' + e.message, { error: true }); return Promise.reject(e); }
   fields.PlannedFor = c.projId;
   return createObject(c.base, c.sid, entityType, fields)
     .then(function (res) {
@@ -1353,7 +1372,7 @@ function createEntity(entityType, fields, label) {
       return linkToProject(c.base, c.sid, caseId, c.projId)
         .then(function () { return loadAndRender(); });
     })
-    .catch(function (err) { alert('Failed to create ' + label + ': ' + err.message); throw err; });
+    .catch(function (err) { showToast('Failed to create ' + label + ': ' + err.message, { error: true }); throw err; });
 }
 
 /* ---------- 14b. Inline "new item" draft row ----------
@@ -1507,7 +1526,7 @@ function saveNewRow(row) {
     if (draftState) fields.State = draftState;
   }
   if (!fields.Title) {
-    alert('Please enter a name.');
+    showToast('Please enter a name.');
     var t = row.querySelector('input[data-field="Title"]');
     if (t) t.focus();
     return;
@@ -1650,7 +1669,7 @@ function commitEdit(cell) {
       cell.innerHTML = cellDisplay(field, newValue);
     })
     .catch(function (err) {
-      alert('Save failed: ' + err.message);
+      showToast('Save failed: ' + err.message, { error: true });
       cell.classList.remove('saving');
       cell.innerHTML = cellDisplay(field, oldVal);
     });
@@ -2048,7 +2067,7 @@ function buildSheetXml(name, header, built, heatCol) {
 }
 function exportToExcel() {
   if (!DATA.risks.length && !DATA.issues.length && !DATA.requests.length) {
-    alert('Nothing to export yet — the panel is still loading.');
+    showToast('Nothing to export yet — the panel is still loading.');
     return;
   }
   var workbook =
@@ -2219,10 +2238,10 @@ function importFromExcel(file) {
   reader.onload = function () {
     var book;
     try { book = parseWorkbook(String(reader.result)); }
-    catch (e) { alert('Could not read the file: ' + e.message); return; }
+    catch (e) { showToast('Could not read the file: ' + e.message, { error: true }); return; }
     processImport(book);
   };
-  reader.onerror = function () { alert('Could not read the file.'); };
+  reader.onerror = function () { showToast('Could not read the file.', { error: true }); };
   reader.readAsText(file);
 }
 
@@ -2282,19 +2301,27 @@ function processImport(book) {
     var upd = ops.filter(function (o) { return o.kind === 'update'; }).length;
     var cre = ops.filter(function (o) { return o.kind === 'create'; }).length;
     if (!upd && !cre) {
-      alert('No changes to import.' + (warnings.length ? '\n\nNotes:\n' + warnings.slice(0, 15).join('\n') : ''));
+      showToast('No changes to import.' + (warnings.length ? '\n' + warnings.slice(0, 6).join('\n') : ''));
       return;
     }
-    var msg = 'Import will update ' + upd + ' and create ' + cre + ' record(s).';
-    if (warnings.length) msg += '\n\nSkipped / warnings (' + warnings.length + '):\n' + warnings.slice(0, 12).join('\n');
-    msg += '\n\nProceed?';
-    if (window.confirm(msg)) executeImport(ops);
+    /* Confirm via the panel's own anchored popover (NOT window.confirm) — no
+       browser chrome, no dimming. Skipped-row details are surfaced in the
+       result toast after the run rather than crammed into the confirm. */
+    var summary = 'Update ' + upd + ' and create ' + cre + ' record(s)' +
+      (warnings.length ? ' — ' + warnings.length + ' row(s) will be skipped' : '') + '.';
+    showConfirm({
+      anchor: document.getElementById('btn-import'),
+      title: 'Import from Excel',
+      message: summary,
+      confirmLabel: 'Import',
+      onConfirm: function () { executeImport(ops, warnings); }
+    });
   });
 }
 
-function executeImport(ops) {
+function executeImport(ops, warnings) {
   var c;
-  try { c = getContext(); } catch (e) { alert('Import failed: ' + e.message); return; }
+  try { c = getContext(); } catch (e) { showToast('Import failed: ' + e.message, { error: true }); return; }
   var jobs = ops.map(function (op) {
     var p;
     if (op.kind === 'update') {
@@ -2310,7 +2337,12 @@ function executeImport(ops) {
   });
   Promise.all(jobs).then(function (results) {
     var failed = results.filter(function (ok) { return !ok; }).length;
-    if (failed) alert(failed + ' of ' + results.length + ' operation(s) failed; the rest were applied.');
+    var applied = results.length - failed;
+    var msg = 'Import complete: ' + applied + ' record(s) applied' + (failed ? ', ' + failed + ' failed' : '') + '.';
+    if (warnings && warnings.length) {
+      msg += '\n' + warnings.length + ' row(s) skipped:\n' + warnings.slice(0, 6).join('\n') + (warnings.length > 6 ? '\n…' : '');
+    }
+    showToast(msg, { error: failed > 0, duration: (failed || (warnings && warnings.length)) ? 9000 : 4500 });
     loadAndRender();
   });
 }
