@@ -1955,14 +1955,19 @@ function initUI() {
   setActiveTab('risks');   /* initialise the toolbar for the default tab */
 }
 
-/* ---------- 17b. Export to Excel ----------
-   Builds a styled multi-sheet SpreadsheetML 2003 workbook entirely in-browser
-   (no external library / no CDN, so it works in locked-down environments).
-   One sheet per tab (Risks / Issues / Requests); each record's action items are
-   listed as rows beneath it. Formatting: bold white-on-burgundy headers, a
-   bordered grid, Risk Rating cells filled with the on-screen heat-map colours,
-   italic-grey action rows, and a frozen header row. */
-function exportDateCell(iso) { return iso ? fmtDate(iso) : ''; }
+/* ---------- 17b. Export to Excel (.xlsx) ----------
+   Builds a GENUINE Office Open XML workbook (.xlsx) entirely in-browser — no
+   external library / no CDN — so Excel opens it silently. (The previous
+   SpreadsheetML-2003-as-.xls export made Excel warn "file format and extension
+   don't match" on every open.) One sheet per tab; each record's action items
+   are listed as rows beneath it. Formatting: bold white-on-burgundy header,
+   bordered grid, Score cells filled with the on-screen heat-map colours,
+   italic-grey action rows, REAL date cells (dd mmm yyyy) and a frozen header. */
+function exportDateCell(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d;          /* a Date -> a real Excel date cell */
+}
 function exportActionRow(a, len) {
   var row = ['', 'Action', a.name || '', a.assignee || '', a.status || '', exportDateCell(a.dueDate)];
   while (row.length < len) row.push('');
@@ -1997,102 +2002,193 @@ function exportRowsRequests() {
   return { rows: rows, kinds: kinds };
 }
 
-/* SpreadsheetML helpers ------------------------------------------------- */
+/* OOXML helpers --------------------------------------------------------- */
 function xmlEsc(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-function xlCell(v, styleId) {
-  return '<Cell' + (styleId ? ' ss:StyleID="' + styleId + '"' : '') +
-    '><Data ss:Type="String">' + xmlEsc(v) + '</Data></Cell>';
+/* 0-based column index -> Excel letters (0 -> A, 26 -> AA). */
+function colLetter(n) {
+  var s = '';
+  n = n + 1;
+  while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
 }
-/* Risk Rating value -> style id (mirrors the on-screen heat map). */
-function exportHeatStyle(value) {
-  var map = {
-    'heatmap-rag-green': 'hmRagGreen', 'heatmap-rag-yellow': 'hmRagYellow',
-    'heatmap-rag-amber': 'hmRagAmber', 'heatmap-rag-red': 'hmRagRed',
-    'heatmap-very-low': 'hmVeryLow', 'heatmap-low': 'hmLow', 'heatmap-medium': 'hmMedium',
-    'heatmap-high': 'hmHigh', 'heatmap-very-high': 'hmVeryHigh', 'heatmap-critical': 'hmCritical'
-  };
-  return map[riskRatingHeatMap(value)] || 'rec';   /* neutral/blank -> plain record cell */
+/* JS Date -> Excel day serial (days since 1899-12-30), from the LOCAL calendar
+   date so a due date never slips a day across time zones. */
+function excelSerial(d) {
+  var utc = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((utc - Date.UTC(1899, 11, 30)) / 86400000);
 }
-function workbookStyles() {
-  function border() {
-    return '<Borders>' +
-      '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
-      '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
-      '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
-      '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E0E0E0"/>' +
-      '</Borders>';
+/* cellXfs index for a Score cell (mirrors the on-screen heat map). */
+var XLSX_HEAT_XF = {
+  'heatmap-rag-green': 6, 'heatmap-rag-yellow': 7, 'heatmap-rag-amber': 8, 'heatmap-rag-red': 9,
+  'heatmap-very-low': 10, 'heatmap-low': 11, 'heatmap-medium': 12, 'heatmap-high': 13,
+  'heatmap-very-high': 14, 'heatmap-critical': 15
+};
+function exportHeatXf(value) {
+  return XLSX_HEAT_XF[riskRatingHeatMap(value)] || 2;   /* neutral/blank -> plain record cell */
+}
+/* styles.xml — cellXfs: 0 default, 1 header, 2 record, 3 action, 4 record date,
+   5 action date, 6-15 heat fills (see XLSX_HEAT_XF). */
+function xlsxStyles() {
+  var heatFills = ['2E7D32', 'C9A000', 'E67E00', 'C62828', '4CAF50', '8BC34A', 'FF9800', 'FF7043', 'F4511E', 'D32F2F'];
+  var fills = '<fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF8B3A62"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFFAFBFC"/><bgColor indexed="64"/></patternFill></fill>' +
+    heatFills.map(function (c) { return '<fill><patternFill patternType="solid"><fgColor rgb="FF' + c + '"/><bgColor indexed="64"/></patternFill></fill>'; }).join('');
+  var xfs = '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>' +
+    '<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>' +
+    '<xf numFmtId="164" fontId="2" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>' +
+    heatFills.map(function (c, i) {
+      return '<xf numFmtId="0" fontId="1" fillId="' + (4 + i) + '" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' +
+        '<alignment horizontal="center" vertical="center"/></xf>';
+    }).join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="1"><numFmt numFmtId="164" formatCode="dd mmm yyyy"/></numFmts>' +
+    '<fonts count="3">' +
+      '<font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
+      '<font><i/><sz val="11"/><color rgb="FF5F6368"/><name val="Calibri"/></font>' +
+    '</fonts>' +
+    '<fills count="' + (4 + heatFills.length) + '">' + fills + '</fills>' +
+    '<borders count="2">' +
+      '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border><left style="thin"><color rgb="FFE0E0E0"/></left><right style="thin"><color rgb="FFE0E0E0"/></right>' +
+        '<top style="thin"><color rgb="FFE0E0E0"/></top><bottom style="thin"><color rgb="FFE0E0E0"/></bottom><diagonal/></border>' +
+    '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="' + (6 + heatFills.length) + '">' + xfs + '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '</styleSheet>';
+}
+/* One worksheet's XML. Strings are written inline (no sharedStrings part),
+   Dates as real date cells, header row frozen. heatCol = 0-based column to
+   colour by Score, or null. */
+function xlsxSheet(header, built, heatCol) {
+  function cell(ref, v, xf) {
+    if (v instanceof Date) return '<c r="' + ref + '" s="' + xf + '"><v>' + excelSerial(v) + '</v></c>';
+    var s = String(v == null ? '' : v);
+    if (s === '') return '<c r="' + ref + '" s="' + xf + '"/>';
+    return '<c r="' + ref + '" s="' + xf + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(s) + '</t></is></c>';
   }
-  function heat(id, color) {
-    return '<Style ss:ID="' + id + '"><Font ss:Bold="1" ss:Color="#FFFFFF"/>' +
-      '<Interior ss:Color="' + color + '" ss:Pattern="Solid"/>' +
-      '<Alignment ss:Vertical="Center" ss:Horizontal="Center"/>' + border() + '</Style>';
-  }
-  return '<Styles>' +
-    '<Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/></Style>' +
-    '<Style ss:ID="hdr"><Font ss:Bold="1" ss:Color="#FFFFFF"/>' +
-      '<Interior ss:Color="#8B3A62" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/>' + border() + '</Style>' +
-    '<Style ss:ID="rec"><Alignment ss:Vertical="Center"/>' + border() + '</Style>' +
-    '<Style ss:ID="act"><Font ss:Italic="1" ss:Color="#5F6368"/>' +
-      '<Interior ss:Color="#FAFBFC" ss:Pattern="Solid"/>' + border() + '</Style>' +
-    heat('hmRagGreen', '#2E7D32') + heat('hmRagYellow', '#C9A000') + heat('hmRagAmber', '#E67E00') + heat('hmRagRed', '#C62828') +
-    heat('hmVeryLow', '#4CAF50') + heat('hmLow', '#8BC34A') + heat('hmMedium', '#FF9800') +
-    heat('hmHigh', '#FF7043') + heat('hmVeryHigh', '#F4511E') + heat('hmCritical', '#D32F2F') +
-    '</Styles>';
-}
-/* Build one <Worksheet>. heatCol = column to colour by Risk Rating (null = none). */
-function buildSheetXml(name, header, built, heatCol) {
-  var safe = String(name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
   var cols = header.map(function (h, i) {
-    return '<Column ss:Width="' + (i === 0 ? 200 : 110) + '"/>';
+    var w = i === 0 ? 12 : (i === 1 ? 44 : 18);
+    return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>';
   }).join('');
-  var headerRow = '<Row>' + header.map(function (h) { return xlCell(h, 'hdr'); }).join('') + '</Row>';
-  var bodyRows = built.rows.map(function (row, idx) {
-    var kind = built.kinds[idx];
-    return '<Row>' + row.map(function (val, c) {
-      var sid = kind === 'action' ? 'act'
-        : (heatCol != null && c === heatCol) ? exportHeatStyle(val)
-        : 'rec';
-      return xlCell(val, sid);
-    }).join('') + '</Row>';
-  }).join('');
-  return '<Worksheet ss:Name="' + xmlEsc(safe) + '">' +
-    '<Table>' + cols + headerRow + bodyRows + '</Table>' +
-    '<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">' +
-      '<FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal>' +
-      '<TopRowBottomPane>1</TopRowBottomPane><ActivePane>2</ActivePane>' +
-    '</WorksheetOptions></Worksheet>';
+  var rows = ['<row r="1">' + header.map(function (h, i) { return cell(colLetter(i) + '1', h, 1); }).join('') + '</row>'];
+  built.rows.forEach(function (row, idx) {
+    var kind = built.kinds[idx], rn = idx + 2;
+    rows.push('<row r="' + rn + '">' + row.map(function (val, c) {
+      var xf;
+      if (val instanceof Date) xf = (kind === 'action') ? 5 : 4;
+      else if (kind === 'action') xf = 3;
+      else if (heatCol != null && c === heatCol) xf = exportHeatXf(val);
+      else xf = 2;
+      return cell(colLetter(c) + rn, val, xf);
+    }).join('') + '</row>');
+  });
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' +
+    '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/>' +
+    '<cols>' + cols + '</cols>' +
+    '<sheetData>' + rows.join('') + '</sheetData>' +
+    '</worksheet>';
 }
+
+/* Minimal ZIP writer (STORED entries + CRC-32) — enough to package an .xlsx. */
+var CRC_TABLE = (function () {
+  var t = [], c, n, k;
+  for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes) {
+  var c = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {   /* files = [{ name, text }] -> Blob */
+  var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+  function u16(n) { return [n & 0xFF, (n >>> 8) & 0xFF]; }
+  function u32(n) { return [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF]; }
+  /* Fixed DOS timestamp (2026-01-01) — Excel ignores it, but all-zero is invalid. */
+  var dosTime = u16(0), dosDate = u16(((2026 - 1980) << 9) | (1 << 5) | 1);
+  files.forEach(function (f) {
+    var name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    var local = [].concat(u32(0x04034b50), u16(20), u16(0), u16(0), dosTime, dosDate, u32(crc),
+      u32(data.length), u32(data.length), u16(name.length), u16(0));
+    parts.push(new Uint8Array(local), name, data);
+    central.push([[].concat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), dosTime, dosDate, u32(crc),
+      u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset)), name]);
+    offset += local.length + name.length + data.length;
+  });
+  var cdStart = offset, cdSize = 0;
+  central.forEach(function (c) { var h = new Uint8Array(c[0]); parts.push(h, c[1]); cdSize += h.length + c[1].length; });
+  parts.push(new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(cdStart), u16(0))));
+  return new Blob(parts, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+/* Assemble the .xlsx package from [{ name, header, built, heatCol }]. */
+function buildXlsx(sheets) {
+  var wbRels = '', wbSheets = '', ctOverrides = '', files = [];
+  sheets.forEach(function (s, i) {
+    var n = i + 1, safe = String(s.name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
+    wbSheets += '<sheet name="' + xmlEsc(safe) + '" sheetId="' + n + '" r:id="rId' + n + '"/>';
+    wbRels += '<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + n + '.xml"/>';
+    ctOverrides += '<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    files.push({ name: 'xl/worksheets/sheet' + n + '.xml', text: xlsxSheet(s.header, s.built, s.heatCol) });
+  });
+  var stylesRid = 'rId' + (sheets.length + 1);
+  files.unshift(
+    { name: '[Content_Types].xml', text:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      ctOverrides + '</Types>' },
+    { name: '_rels/.rels', text:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>' },
+    { name: 'xl/workbook.xml', text:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheets>' + wbSheets + '</sheets></workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', text:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + wbRels +
+      '<Relationship Id="' + stylesRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      '</Relationships>' },
+    { name: 'xl/styles.xml', text: xlsxStyles() }
+  );
+  return zipStore(files);
+}
+
 function exportToExcel() {
   if (!DATA.risks.length && !DATA.issues.length && !DATA.requests.length) {
     showToast('Nothing to export yet — the panel is still loading.');
     return;
   }
-  var workbook =
-    '<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
-    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"' +
-    ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
-    ' xmlns:x="urn:schemas-microsoft-com:office:excel"' +
-    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
-    workbookStyles() +
-    buildSheetXml('Risks',
-      ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date'],
-      exportRowsRisks(), 4) +
-    buildSheetXml('Issues',
-      ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date'],
-      exportRowsIssues(), 3) +
-    buildSheetXml('Change Requests',
-      ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],
-      exportRowsRequests(), null) +
-    '</Workbook>';
-
-  var blob = new Blob(['﻿' + workbook], { type: 'application/vnd.ms-excel' });
+  var blob = buildXlsx([
+    { name: 'Risks',           header: ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date'], built: exportRowsRisks(),    heatCol: 4 },
+    { name: 'Issues',          header: ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date'],                                built: exportRowsIssues(),   heatCol: 3 },
+    { name: 'Change Requests', header: ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],                                                   built: exportRowsRequests(), heatCol: null }
+  ]);
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xls';
+  a.download = 'RAID_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -2100,11 +2196,12 @@ function exportToExcel() {
 }
 
 /* ---------- 17c. Import from Excel ----------
-   Reads a workbook previously produced by Export (SpreadsheetML 2003 XML),
-   matches rows back to records by the ID (SYSID) column, and updates changed
-   fields / creates rows with no ID. Read-only columns (ID, Score, Requestor,
-   Submitted, Raised) are ignored; empty cells are left untouched (never clears).
-   Owner is matched by name, picklists by label, dates by parsing the shown date. */
+   Reads a workbook produced by Export — a native .xlsx (including one re-saved
+   from Excel) or a legacy SpreadsheetML .xls — matches rows back to records by
+   the ID (SYSID) column, and updates changed fields / creates rows with no ID.
+   Read-only columns (ID, Score, Requestor, Submitted) are ignored; empty cells
+   are left untouched (never clears). Owner is matched by name, picklists by
+   label, dates from Excel date serials or the shown date text. */
 var IMPORT_CFG = {
   'Risks': {
     entityType: 'Risk', list: 'risks',
@@ -2184,6 +2281,12 @@ function importConvert(field, kind, display) {
   if (kind === 'text') return Promise.resolve(display);
   if (!display || display === '—') return Promise.resolve('');
   if (kind === 'date') {
+    /* A native .xlsx date cell arrives as an Excel day serial (days since
+       1899-12-30), e.g. "46229". Convert those; anything else parses as text. */
+    if (/^\d{5}(\.\d+)?$/.test(display)) {
+      var serial = Math.round(parseFloat(display));
+      return Promise.resolve(new Date(Date.UTC(1899, 11, 30) + serial * 86400000).toISOString().slice(0, 10));
+    }
     var d = new Date(display);
     return Promise.resolve(isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10));
   }
@@ -2233,16 +2336,123 @@ function parseWorkbook(text) {
   return out;
 }
 
+/* ---------- .xlsx reading ----------
+   Minimal ZIP reader for a native .xlsx: walks the central directory, extracts
+   each part (STORED as-is; DEFLATE via the browser's native DecompressionStream
+   — Excel-saved files are always deflated), then parses workbook / rels /
+   sharedStrings / sheet XML into the same { sheetName: [[cell, ...], ...] }
+   shape the legacy SpreadsheetML parser produces. Numbers (incl. Excel date
+   serials) arrive as their text; importConvert turns serials into dates. */
+function zipEntries(buf) {
+  var b = new Uint8Array(buf), dv = new DataView(buf), i = b.length - 22, eocd = -1;
+  for (; i >= 0 && i >= b.length - 22 - 65535; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error('not a valid .xlsx (zip directory not found)');
+  var count = dv.getUint16(eocd + 10, true), cdOff = dv.getUint32(eocd + 16, true), out = {}, p = cdOff;
+  var dec = new TextDecoder();
+  for (var n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    var method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+    var nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    var loff = dv.getUint32(p + 42, true);
+    var name = dec.decode(b.subarray(p + 46, p + 46 + nlen));
+    var lnlen = dv.getUint16(loff + 26, true), lxlen = dv.getUint16(loff + 28, true);
+    var start = loff + 30 + lnlen + lxlen;
+    out[name] = { method: method, data: b.subarray(start, start + csize), size: usize };
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+function zipText(entry) {      /* -> Promise<string> ('' if the part is absent) */
+  if (!entry) return Promise.resolve('');
+  if (entry.method === 0) return Promise.resolve(new TextDecoder().decode(entry.data));
+  if (entry.method !== 8 || typeof DecompressionStream === 'undefined') {
+    return Promise.reject(new Error('this browser cannot read compressed .xlsx parts'));
+  }
+  var stream = new Blob([entry.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Response(stream).arrayBuffer().then(function (ab) { return new TextDecoder().decode(ab); });
+}
+function xmlDoc(text) { return new DOMParser().parseFromString(text, 'application/xml'); }
+function colIndex(ref) {         /* "BC12" -> 54 (0-based) */
+  var n = 0, m = /^[A-Z]+/.exec(ref);
+  if (!m) return 0;
+  for (var i = 0; i < m[0].length; i++) n = n * 26 + (m[0].charCodeAt(i) - 64);
+  return n - 1;
+}
+function parseXlsxSheet(xml, shared) {
+  var doc = xmlDoc(xml), rows = [], rowEls = doc.getElementsByTagName('row');
+  for (var r = 0; r < rowEls.length; r++) {
+    var rn = parseInt(rowEls[r].getAttribute('r'), 10) || (rows.length + 1);
+    while (rows.length < rn - 1) rows.push([]);
+    var cells = rowEls[r].getElementsByTagName('c'), vals = [];
+    for (var c = 0; c < cells.length; c++) {
+      var ce = cells[c], ci = colIndex(ce.getAttribute('r') || ''), type = ce.getAttribute('t') || '';
+      var v = '', vEl = ce.getElementsByTagName('v')[0];
+      if (type === 'inlineStr') {
+        var ts = ce.getElementsByTagName('t');
+        for (var k = 0; k < ts.length; k++) v += ts[k].textContent;
+      } else if (type === 's') {
+        v = shared[parseInt(vEl ? vEl.textContent : '-1', 10)] || '';
+      } else if (type === 'b') {
+        v = (vEl && vEl.textContent === '1') ? 'TRUE' : 'FALSE';
+      } else {
+        v = vEl ? vEl.textContent : '';   /* numbers (incl. date serials) + formula strings */
+      }
+      while (vals.length < ci) vals.push('');
+      vals[ci] = v;
+    }
+    rows.push(vals);
+  }
+  return rows;
+}
+function parseXlsx(buf) {        /* -> Promise<{ sheetName: rows }> */
+  var z = zipEntries(buf);
+  return Promise.all([zipText(z['xl/workbook.xml']), zipText(z['xl/_rels/workbook.xml.rels']), zipText(z['xl/sharedStrings.xml'])])
+    .then(function (parts) {
+      var wb = xmlDoc(parts[0]), rels = xmlDoc(parts[1]), shared = [];
+      if (parts[2]) {
+        var sis = xmlDoc(parts[2]).getElementsByTagName('si');
+        for (var i = 0; i < sis.length; i++) {
+          var ts = sis[i].getElementsByTagName('t'), txt = '';
+          for (var j = 0; j < ts.length; j++) txt += ts[j].textContent;
+          shared.push(txt);
+        }
+      }
+      var target = {}, rs = rels.getElementsByTagName('Relationship');
+      for (var r = 0; r < rs.length; r++) {
+        var t = rs[r].getAttribute('Target') || '';
+        target[rs[r].getAttribute('Id')] = t.charAt(0) === '/' ? t.slice(1) : 'xl/' + t;
+      }
+      var sheets = wb.getElementsByTagName('sheet'), jobs = [];
+      for (var s = 0; s < sheets.length; s++) {
+        (function (el) {
+          var name = el.getAttribute('name');
+          var rid = el.getAttribute('r:id') || el.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+          jobs.push(zipText(z[target[rid]]).then(function (xml) { return { name: name, rows: parseXlsxSheet(xml, shared) }; }));
+        })(sheets[s]);
+      }
+      return Promise.all(jobs);
+    })
+    .then(function (list) {
+      var out = {};
+      list.forEach(function (s) { out[s.name] = s.rows; });
+      return out;
+    });
+}
+
+/* Read the chosen file: a native .xlsx (zip signature "PK") goes through the
+   xlsx reader; anything else is treated as a legacy SpreadsheetML export. */
 function importFromExcel(file) {
   var reader = new FileReader();
   reader.onload = function () {
-    var book;
-    try { book = parseWorkbook(String(reader.result)); }
-    catch (e) { showToast('Could not read the file: ' + e.message, { error: true }); return; }
-    processImport(book);
+    var buf = reader.result, head = new Uint8Array(buf);
+    var isZip = head.length > 1 && head[0] === 0x50 && head[1] === 0x4B;
+    var p = isZip
+      ? parseXlsx(buf)
+      : new Promise(function (resolve) { resolve(parseWorkbook(new TextDecoder().decode(buf))); });
+    p.then(processImport).catch(function (e) { showToast('Could not read the file: ' + e.message, { error: true }); });
   };
   reader.onerror = function () { showToast('Could not read the file.', { error: true }); };
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 
 function processImport(book) {

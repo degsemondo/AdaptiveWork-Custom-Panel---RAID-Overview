@@ -61,7 +61,7 @@
       <span class="expand-all-label">Expand all</span>
     </button>
 
-    <input type="file" id="aw-import-file" accept=".xls,.xml" style="display:none" />
+    <input type="file" id="aw-import-file" accept=".xlsx,.xls,.xml" style="display:none" />
     <button class="aw-btn" id="btn-import" aria-label="Import from Excel">
       <i class="ti ti-file-import" style="font-size:14px" aria-hidden="true"></i>
       Import
