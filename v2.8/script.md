@@ -2298,7 +2298,12 @@ var IMPORT_CFG = {
       { hdr: 'Reporting Level', api: 'C_ReportingLevel', kind: 'pick' },
       { hdr: 'Due Date',        api: 'DueDate',            kind: 'date' },
       { hdr: 'Next Review Date', api: 'C_NextReviewDateR', kind: 'date' }
-    ]
+    ],
+    /* New risks from the sheet start as Draft when no Status is given — same
+       rule as the panel's own "New risk" row (otherwise AW defaults to Submitted). */
+    createExtra: function (fields) {
+      if (!fields.State) { var d = rawForLabel('State', 'Draft', '/CaseState/'); if (d) fields.State = d; }
+    }
   },
   'Issues': {
     entityType: 'Issue', list: 'issues', nameHdr: 'Issue name', dueHdr: 'Due Date', ownerHdr: 'Owner',
