@@ -703,8 +703,9 @@ function actionStatusInfo(stateRaw, dueIso) {
   return { label: label, done: isDone, late: isLate };
 }
 /* Inner HTML of an action row in display mode (icon, name, owner, status, tools).
-   statusAction = free-text C_SummaryUpdateAction value (drives the status pop-out icon's tint). */
-function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction) {
+   statusAction = free-text C_SummaryUpdateAction value (drives the status pop-out icon's tint).
+   description  = C_DescriptionA; shown as a hover tooltip on the action name. */
+function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction, description) {
   var s = actionStatusInfo(stateRaw, dueIso);
   var iconCol = s.done ? '#3B6D11' : '#185FA5';
   var dCls = s.late ? 'overdue' : 'ok';
@@ -715,7 +716,7 @@ function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction) {
     '" aria-label="Action status"' + ' style="color:' + (hasStatus ? '#8B3A62' : '#c9ccd1') + '">' +
     '<i class="ti ti-notes" aria-hidden="true"></i></button>';
   return '<i class="ti ti-circle-check" style="font-size:14px;color:' + iconCol + '" aria-hidden="true"></i>' +
-    '<span class="action-name">' + esc(name) + '</span>' +
+    '<span class="action-name"' + (description && String(description).trim() ? ' title="' + esc(description) + '"' : '') + '>' + esc(name) + '</span>' +
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
     statePill +
     (s.label ? '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' : '') +
@@ -734,8 +735,9 @@ function actionItemHtml(a) {
     ' data-owner-name="' + esc(a.assignee) + '"' +
     ' data-due="' + esc(a.dueDate || '') + '"' +
     ' data-state="' + esc(a.stateRaw) + '"' +
-    ' data-status-action="' + esc(a.statusAction || '') + '">' +
-    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction) +
+    ' data-status-action="' + esc(a.statusAction || '') + '"' +
+    ' data-description="' + esc(a.description || '') + '">' +
+    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction, a.description) +
     '</div>';
 }
 /* Edit form for an action (used for both edit and add). */
@@ -773,7 +775,8 @@ function actionDataFromEl(el) {
     assignee: el.getAttribute('data-owner-name') || '',
     dueDate:  el.getAttribute('data-due') || '',
     stateRaw: el.getAttribute('data-state') || '',
-    statusAction: el.getAttribute('data-status-action') || ''
+    statusAction: el.getAttribute('data-status-action') || '',
+    description:  el.getAttribute('data-description') || ''
   };
 }
 function startActionEdit(el) {
@@ -787,7 +790,7 @@ function cancelActionEdit(el) {
   if (!el) return;
   if (!el.getAttribute('data-action-id')) { el.remove(); return; }   /* discard new draft */
   var a = actionDataFromEl(el);
-  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction);
+  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction, a.description);
 }
 function addActionRow(addBtn) {
   var block = addBtn.closest('.actions-block');
@@ -2761,7 +2764,19 @@ function executeImport(ops, warnings) {
       }
       op.fields.Container = container;
       if (!op.fields.ActionItemState) { var openRaw = actionStateRaw('Open'); if (openRaw) op.fields.ActionItemState = openRaw; }
-      return okFail(createObject(c.base, c.sid, 'ActionItem', op.fields));
+      /* The description is sent with the create AND re-applied as an update
+         afterwards: the tenant has been seen to accept the create yet leave
+         C_DescriptionA blank. Any failure of that second step is reported by
+         name in the result toast rather than swallowed. */
+      var desc = op.fields[ACTION_DESC_FIELD];
+      return okFail(createObject(c.base, c.sid, 'ActionItem', op.fields).then(function (res) {
+        var newId = res && res.id;
+        if (!newId || !desc) return;
+        var f = {}; f[ACTION_DESC_FIELD] = desc;
+        return updateObject(c.base, c.sid, newId, f).catch(function (err) {
+          warnings.push(op.label + ': action created but its description could not be saved — ' + err.message);
+        });
+      }));
     });
     return Promise.all(actionJobs).then(function (actResults) {
       var recFailed = recResults.filter(function (ok) { return !ok; }).length;
