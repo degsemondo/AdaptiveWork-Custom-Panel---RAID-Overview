@@ -596,7 +596,9 @@ function toAction(e) {
                  :           'No due date';
   return {
     rawId:    e.id || '',
+    sysId:    e.SYSID || '',
     name:     e.Name || '(unnamed)',
+    description: e.Description || '',
     ownerRaw: (e.EntityOwner && e.EntityOwner.id) || '',
     assignee: (e.EntityOwner && e.EntityOwner.Name) || '—',
     dueDate:  e.DueDate || null,
@@ -1981,44 +1983,77 @@ function initUI() {
    external library / no CDN — so Excel opens it silently. (The previous
    SpreadsheetML-2003-as-.xls export made Excel warn "file format and extension
    don't match" on every open.) One sheet per tab; each record's action items
-   are listed as rows beneath it. Formatting: bold white-on-burgundy header,
-   bordered grid, Score cells filled with the on-screen heat-map colours,
-   italic-grey action rows, REAL date cells (dd mmm yyyy) and a frozen header. */
+   are listed as rows beneath it, ALIGNED to the parent's columns (ID = the
+   action's SYSID, name / Description / Owner / Due Date / Status hold the
+   action's own values) with a Type column saying which is which, so the
+   import can update or insert actions too. Formatting: bold white-on-burgundy
+   header, bordered grid, Score cells filled with the on-screen heat-map
+   colours, action rows tinted + italic + "↳"-indented and grouped under their
+   parent with Excel's outline (+/-) controls, REAL date cells (dd mmm yyyy)
+   and a frozen header. Status is the last column on every sheet. */
+var ACTION_NAME_PREFIX = '↳ ';
 function exportDateCell(iso) {
   if (!iso) return '';
   var d = new Date(iso);
   return isNaN(d.getTime()) ? '' : d;          /* a Date -> a real Excel date cell */
 }
-function exportActionRow(a, len) {
-  var row = ['', 'Action', a.name || '', a.assignee || '', a.status || '', exportDateCell(a.dueDate)];
-  while (row.length < len) row.push('');
-  return row.slice(0, len);
+/* Build a row from a header list + { header: value } map (missing -> ''). */
+function exportRowFor(header, vals) {
+  return header.map(function (h) { return (vals[h] === undefined || vals[h] === null) ? '' : vals[h]; });
 }
-/* Each builder returns { rows: [[...]], kinds: ['record'|'action', ...] }. */
-function exportRowsRisks() {
-  var rows = [], kinds = [];
-  DATA.risks.forEach(function (r) {
-    rows.push([r.sysId, r.name, r.probability, r.impact, r.riskRating, r.status, r.owner, r.reportingLevel, exportDateCell(r.dueDate), exportDateCell(r.nextReviewDate)]);
-    kinds.push('record');
-    (DATA.actionMap[r.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 10)); kinds.push('action'); });
-  });
-  return { rows: rows, kinds: kinds };
+/* An action row aligned to its parent sheet's columns. nameHdr / dueHdr are the
+   sheet's own name + due-date header labels (e.g. "Risk name" / "Due Date",
+   or "Request name" / "Decision by"); ownerHdr is the sheet's person column. */
+function exportActionRow(header, a, nameHdr, dueHdr, ownerHdr) {
+  var vals = { 'ID': a.sysId || '', 'Type': 'Action', 'Description': a.description || '',
+    'Status': cleanLabel(a.stateRaw) || '' };
+  vals[nameHdr]  = ACTION_NAME_PREFIX + (a.name || '');
+  vals[dueHdr]   = exportDateCell(a.dueDate);
+  vals[ownerHdr] = (a.assignee && a.assignee !== '—') ? a.assignee : '';
+  return exportRowFor(header, vals);
 }
-function exportRowsIssues() {
+/* Sheet definitions — header order IS the column order. */
+var EXPORT_SHEETS = {
+  risks: {
+    name: 'Risks', list: 'risks', type: 'Risk', nameHdr: 'Risk name', dueHdr: 'Due Date', ownerHdr: 'Owner', heatHdr: 'Score',
+    header: ['ID', 'Type', 'Risk name', 'Description', 'Probability', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date', 'Status'],
+    record: function (r) {
+      return { 'ID': r.sysId, 'Type': 'Risk', 'Risk name': r.name, 'Description': r.description || '',
+        'Probability': r.probability, 'Impact': r.impact, 'Score': r.riskRating, 'Owner': r.owner,
+        'Reporting Level': r.reportingLevel, 'Due Date': exportDateCell(r.dueDate),
+        'Next Review Date': exportDateCell(r.nextReviewDate), 'Status': r.status };
+    }
+  },
+  issues: {
+    name: 'Issues', list: 'issues', type: 'Issue', nameHdr: 'Issue name', dueHdr: 'Due Date', ownerHdr: 'Owner', heatHdr: 'Score',
+    header: ['ID', 'Type', 'Issue name', 'Description', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Status'],
+    record: function (i) {
+      return { 'ID': i.sysId, 'Type': 'Issue', 'Issue name': i.name, 'Description': i.description || '',
+        'Impact': i.impact, 'Score': i.score, 'Owner': i.owner, 'Reporting Level': i.reportingLevel,
+        'Due Date': exportDateCell(i.dueDate), 'Status': i.status };
+    }
+  },
+  requests: {
+    name: 'Change Requests', list: 'requests', type: 'Change Request', nameHdr: 'Request name', dueHdr: 'Decision by', ownerHdr: 'Requestor', heatHdr: null,
+    header: ['ID', 'Type', 'Request name', 'Description', 'Requestor', 'Submitted', 'Decision by', 'Status'],
+    record: function (q) {
+      return { 'ID': q.sysId, 'Type': 'Change Request', 'Request name': q.name, 'Description': q.description || '',
+        'Requestor': q.requestor, 'Submitted': exportDateCell(q.submitted),
+        'Decision by': exportDateCell(q.decisionBy), 'Status': q.status };
+    }
+  }
+};
+/* Rows for one sheet: each record followed by its actions.
+   Returns { rows: [[...]], kinds: ['record'|'action', ...] }. */
+function exportRowsFor(def) {
   var rows = [], kinds = [];
-  DATA.issues.forEach(function (i) {
-    rows.push([i.sysId, i.name, i.impact, i.score, i.status, i.owner, i.reportingLevel, exportDateCell(i.dueDate)]);
+  (DATA[def.list] || []).forEach(function (rec) {
+    rows.push(exportRowFor(def.header, def.record(rec)));
     kinds.push('record');
-    (DATA.actionMap[i.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 8)); kinds.push('action'); });
-  });
-  return { rows: rows, kinds: kinds };
-}
-function exportRowsRequests() {
-  var rows = [], kinds = [];
-  DATA.requests.forEach(function (q) {
-    rows.push([q.sysId, q.name, q.status, q.requestor, exportDateCell(q.submitted), exportDateCell(q.decisionBy)]);
-    kinds.push('record');
-    (DATA.actionMap[q.rawId] || []).forEach(function (a) { rows.push(exportActionRow(a, 6)); kinds.push('action'); });
+    (DATA.actionMap[rec.rawId] || []).forEach(function (a) {
+      rows.push(exportActionRow(def.header, a, def.nameHdr, def.dueHdr, def.ownerHdr));
+      kinds.push('action');
+    });
   });
   return { rows: rows, kinds: kinds };
 }
@@ -2056,7 +2091,7 @@ function xlsxStyles() {
   var heatFills = ['2E7D32', 'C9A000', 'E67E00', 'C62828', '4CAF50', '8BC34A', 'FF9800', 'FF7043', 'F4511E', 'D32F2F'];
   var fills = '<fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
     '<fill><patternFill patternType="solid"><fgColor rgb="FF8B3A62"/><bgColor indexed="64"/></patternFill></fill>' +
-    '<fill><patternFill patternType="solid"><fgColor rgb="FFFAFBFC"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF4ECF1"/><bgColor indexed="64"/></patternFill></fill>' +
     heatFills.map(function (c) { return '<fill><patternFill patternType="solid"><fgColor rgb="FF' + c + '"/><bgColor indexed="64"/></patternFill></fill>'; }).join('');
   var xfs = '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
     '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +
@@ -2074,7 +2109,7 @@ function xlsxStyles() {
     '<fonts count="3">' +
       '<font><sz val="11"/><name val="Calibri"/></font>' +
       '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
-      '<font><i/><sz val="11"/><color rgb="FF5F6368"/><name val="Calibri"/></font>' +
+      '<font><i/><sz val="11"/><color rgb="FF5A3A4C"/><name val="Calibri"/></font>' +
     '</fonts>' +
     '<fills count="' + (4 + heatFills.length) + '">' + fills + '</fills>' +
     '<borders count="2">' +
@@ -2087,9 +2122,18 @@ function xlsxStyles() {
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
     '</styleSheet>';
 }
+/* Column width by header label (Excel character units). */
+function exportColWidth(h) {
+  if (h === 'ID') return 12;
+  if (h === 'Type') return 15;
+  if (h === 'Description') return 60;
+  if (/ name$/.test(h)) return 44;
+  return 18;
+}
 /* One worksheet's XML. Strings are written inline (no sharedStrings part),
    Dates as real date cells, header row frozen. heatCol = 0-based column to
-   colour by Score, or null. */
+   colour by Score, or null. Action rows get outlineLevel 1 so Excel shows them
+   as a collapsible group beneath their parent record (summary row above). */
 function xlsxSheet(header, built, heatCol) {
   function cell(ref, v, xf) {
     if (v instanceof Date) return '<c r="' + ref + '" s="' + xf + '"><v>' + excelSerial(v) + '</v></c>';
@@ -2098,13 +2142,14 @@ function xlsxSheet(header, built, heatCol) {
     return '<c r="' + ref + '" s="' + xf + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(s) + '</t></is></c>';
   }
   var cols = header.map(function (h, i) {
-    var w = i === 0 ? 12 : (i === 1 ? 44 : 18);
-    return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>';
+    return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + exportColWidth(h) + '" customWidth="1"/>';
   }).join('');
   var rows = ['<row r="1">' + header.map(function (h, i) { return cell(colLetter(i) + '1', h, 1); }).join('') + '</row>'];
+  var hasActions = false;
   built.rows.forEach(function (row, idx) {
     var kind = built.kinds[idx], rn = idx + 2;
-    rows.push('<row r="' + rn + '">' + row.map(function (val, c) {
+    if (kind === 'action') hasActions = true;
+    rows.push('<row r="' + rn + '"' + (kind === 'action' ? ' outlineLevel="1"' : '') + '>' + row.map(function (val, c) {
       var xf;
       if (val instanceof Date) xf = (kind === 'action') ? 5 : 4;
       else if (kind === 'action') xf = 3;
@@ -2116,9 +2161,10 @@ function xlsxSheet(header, built, heatCol) {
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheetPr><outlinePr summaryBelow="0"/></sheetPr>' +
     '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' +
     '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>' +
-    '<sheetFormatPr defaultRowHeight="15"/>' +
+    '<sheetFormatPr defaultRowHeight="15"' + (hasActions ? ' outlineLevelRow="1"' : '') + '/>' +
     '<cols>' + cols + '</cols>' +
     '<sheetData>' + rows.join('') + '</sheetData>' +
     '</worksheet>';
@@ -2201,11 +2247,11 @@ function exportToExcel() {
     showToast('Nothing to export yet — the panel is still loading.');
     return;
   }
-  var blob = buildXlsx([
-    { name: 'Risks',           header: ['ID', 'Risk name', 'Probability', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date'], built: exportRowsRisks(),    heatCol: 4 },
-    { name: 'Issues',          header: ['ID', 'Issue name', 'Impact', 'Score', 'Status', 'Owner', 'Reporting Level', 'Due Date'],                                built: exportRowsIssues(),   heatCol: 3 },
-    { name: 'Change Requests', header: ['ID', 'Request name', 'Status', 'Requestor', 'Submitted', 'Decision by'],                                                   built: exportRowsRequests(), heatCol: null }
-  ]);
+  var blob = buildXlsx(['risks', 'issues', 'requests'].map(function (k) {
+    var def = EXPORT_SHEETS[k];
+    var heatCol = def.heatHdr ? def.header.indexOf(def.heatHdr) : null;
+    return { name: def.name, header: def.header, built: exportRowsFor(def), heatCol: (heatCol != null && heatCol > -1) ? heatCol : null };
+  }));
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
@@ -2220,14 +2266,19 @@ function exportToExcel() {
    Reads a workbook produced by Export — a native .xlsx (including one re-saved
    from Excel) or a legacy SpreadsheetML .xls — matches rows back to records by
    the ID (SYSID) column, and updates changed fields / creates rows with no ID.
-   Read-only columns (ID, Score, Requestor, Submitted) are ignored; empty cells
-   are left untouched (never clears). Owner is matched by name, picklists by
-   label, dates from Excel date serials or the shown date text. */
+   Rows whose Type column says "Action" (or whose name starts with the "↳"
+   prefix) are ActionItems: an ID matches an existing action to update; no ID
+   creates a new action under the nearest record row ABOVE it (which may itself
+   be a brand-new record — records are created first, then their actions).
+   Read-only columns (ID, Type, Score, Requestor, Submitted) are ignored; empty
+   cells are left untouched (never clears). Owner is matched by name, picklists
+   by label, dates from Excel date serials or the shown date text. */
 var IMPORT_CFG = {
   'Risks': {
-    entityType: 'Risk', list: 'risks',
+    entityType: 'Risk', list: 'risks', nameHdr: 'Risk name', dueHdr: 'Due Date', ownerHdr: 'Owner',
     fields: [
       { hdr: 'Risk name',       api: 'Title',            kind: 'text' },
+      { hdr: 'Description',     api: 'Description',      kind: 'text' },
       { hdr: 'Probability',     api: 'C_Probability',     kind: 'pick' },
       { hdr: 'Impact',          api: 'C_ImpactR',        kind: 'pick' },
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
@@ -2238,9 +2289,10 @@ var IMPORT_CFG = {
     ]
   },
   'Issues': {
-    entityType: 'Issue', list: 'issues',
+    entityType: 'Issue', list: 'issues', nameHdr: 'Issue name', dueHdr: 'Due Date', ownerHdr: 'Owner',
     fields: [
       { hdr: 'Issue name',      api: 'Title',            kind: 'text' },
+      { hdr: 'Description',     api: 'Description',      kind: 'text' },
       { hdr: 'Impact',          api: 'C_IssueImpact',    kind: 'pick' },
       { hdr: 'Status',          api: 'State',            kind: 'pick' },
       { hdr: 'Owner',           api: 'Owner',            kind: 'user' },
@@ -2249,15 +2301,51 @@ var IMPORT_CFG = {
     ]
   },
   'Change Requests': {
-    entityType: 'EnhancementRequest', list: 'requests',
+    entityType: 'EnhancementRequest', list: 'requests', nameHdr: 'Request name', dueHdr: 'Decision by', ownerHdr: 'Requestor',
     fields: [
-      { hdr: 'Request name', api: 'Title',   kind: 'text' },
-      { hdr: 'Status',       api: 'State',   kind: 'pick' },
-      { hdr: 'Decision by',  api: 'DueDate', kind: 'date' }
+      { hdr: 'Request name', api: 'Title',       kind: 'text' },
+      { hdr: 'Description',  api: 'Description', kind: 'text' },
+      { hdr: 'Status',       api: 'State',       kind: 'pick' },
+      { hdr: 'Decision by',  api: 'DueDate',     kind: 'date' }
     ],
     createExtra: function (fields) { var rt = changeRequestTypeRaw(); if (rt) fields.RequestType = rt; }
   }
 };
+
+/* ActionItem columns on a sheet — the action's values sit in the parent's
+   name / Description / person / due-date / Status columns, so the header
+   labels come from the sheet config. */
+function actionImportFields(cfg) {
+  return [
+    { hdr: cfg.nameHdr,  api: 'Name',            kind: 'text' },
+    { hdr: 'Description', api: 'Description',     kind: 'text' },
+    { hdr: cfg.ownerHdr, api: 'EntityOwner',     kind: 'user' },
+    { hdr: cfg.dueHdr,   api: 'DueDate',         kind: 'date' },
+    { hdr: 'Status',     api: 'ActionItemState', kind: 'pick' }
+  ];
+}
+/* Current raw value of a field on a loaded action (for change detection). */
+function actCurrent(a, api) {
+  if (api === 'Name')            return a.name === '(unnamed)' ? '' : a.name;
+  if (api === 'Description')     return a.description || '';
+  if (api === 'EntityOwner')     return a.ownerRaw || '';
+  if (api === 'DueDate')         return a.dueDate || '';
+  if (api === 'ActionItemState') return a.stateRaw || '';
+  return '';
+}
+/* Is this sheet row an action row? Type column first, "↳" name prefix as a
+   fallback for sheets where the Type column was removed. */
+function isActionRow(row, colOf, cfg) {
+  var t = (colOf.Type != null) ? String(row[colOf.Type] || '').trim().toLowerCase() : '';
+  if (t) return t === 'action';
+  var nc = colOf[cfg.nameHdr];
+  return nc != null && String(row[nc] || '').trim().indexOf(ACTION_NAME_PREFIX.trim()) === 0;
+}
+function stripActionPrefix(s) {
+  s = String(s == null ? '' : s).trim();
+  var p = ACTION_NAME_PREFIX.trim();
+  return s.indexOf(p) === 0 ? s.slice(p.length).trim() : s;
+}
 
 /* Risk's Reporting Level field API name differs from Issue's — point the Risk
    import column at RISK_REPORTING_FIELD, or drop it if Risk has no such field. */
@@ -2273,6 +2361,7 @@ var IMPORT_CFG = {
 /* Current raw value of an API field on a loaded record (for change detection). */
 function recCurrent(entityType, rec, api) {
   if (api === 'Title') return rec.name === '(unnamed)' ? '' : rec.name;
+  if (api === 'Description') return rec.description || '';
   if (entityType === 'Risk') {
     if (api === 'C_Probability')     return rec.probabilityRaw;
     if (api === RISK_IMPACT_FIELD)  return rec.impactRaw;
@@ -2476,8 +2565,40 @@ function importFromExcel(file) {
   reader.readAsArrayBuffer(file);
 }
 
+/* Resolve one sheet row's cells into { fields, warnings } via importConvert.
+   `current(api)` returns the existing raw value (or null when creating) so
+   unchanged cells are dropped. */
+function resolveRowFields(fieldDefs, row, colOf, current, label, warnings) {
+  var proms = fieldDefs.map(function (f) {
+    var ci = colOf[f.hdr];
+    var disp = (ci != null) ? row[ci] : '';
+    if (f.api === 'Name') disp = stripActionPrefix(disp);        /* drop the "↳ " marker */
+    return importConvert(f.api, f.kind, disp).then(function (val) { return { f: f, val: val, disp: disp }; });
+  });
+  return Promise.all(proms).then(function (resolved) {
+    var fields = {};
+    resolved.forEach(function (rv) {
+      if (rv.val === null) { warnings.push(label + ': could not resolve "' + rv.disp + '" for ' + rv.f.hdr); return; }
+      if (rv.val === '') return;                       /* empty -> leave untouched */
+      if (current) {
+        var cur = current(rv.f.api);
+        var curCmp = (rv.f.kind === 'date') ? String(cur).slice(0, 10) : cur;
+        if (String(curCmp) === String(rv.val)) return;  /* unchanged */
+      }
+      fields[rv.f.api] = rv.val;
+    });
+    return fields;
+  });
+}
+
 function processImport(book) {
   var ops = [], warnings = [], pending = [];
+
+  /* Every loaded action, by SYSID (actions can sit under any tab's records). */
+  var actBySys = {};
+  Object.keys(DATA.actionMap || {}).forEach(function (pid) {
+    DATA.actionMap[pid].forEach(function (a) { if (a.sysId) actBySys[String(a.sysId)] = a; });
+  });
 
   Object.keys(IMPORT_CFG).forEach(function (sheetName) {
     var cfg = IMPORT_CFG[sheetName];
@@ -2487,58 +2608,89 @@ function processImport(book) {
     var colOf = {};
     rows[0].forEach(function (h, idx) { colOf[String(h).trim()] = idx; });
     var idCol = colOf.ID;
+    var actFields = actionImportFields(cfg);
 
     var bySys = {};
     (DATA[cfg.list] || []).forEach(function (rec) { if (rec.sysId) bySys[String(rec.sysId)] = rec; });
 
+    /* The record row most recently seen while walking down the sheet — new
+       (ID-less) action rows attach to it. rawId is set for an existing record;
+       createOp is filled in once the row resolves to a create. */
+    var parentRef = null;
+
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
-      if ((row[0] || '') === '' && (row[1] || '') === 'Action') continue;   /* action sub-row */
+      var rowNum = r + 1;
+      var label = sheetName + ' row ' + rowNum;
+      var idVal = (idCol != null) ? String(row[idCol] || '').trim() : '';
+      var blank = row.every(function (v) { return String(v == null ? '' : v).trim() === ''; });
+      if (blank) continue;
 
-      (function (row, rowNum) {
-        var idVal = (idCol != null) ? String(row[idCol] || '').trim() : '';
-        var rec = idVal ? bySys[idVal] : null;
-        var proms = cfg.fields.map(function (f) {
-          var ci = colOf[f.hdr];
-          var disp = (ci != null) ? row[ci] : '';
-          return importConvert(f.api, f.kind, disp).then(function (val) { return { f: f, val: val, disp: disp }; });
-        });
-        pending.push(Promise.all(proms).then(function (resolved) {
-          var fields = {};
-          resolved.forEach(function (rv) {
-            if (rv.val === null) { warnings.push(sheetName + ' row ' + rowNum + ': could not resolve "' + rv.disp + '" for ' + rv.f.hdr); return; }
-            if (rv.val === '') return;                       /* empty -> leave untouched */
-            if (rec) {
-              var cur = recCurrent(cfg.entityType, rec, rv.f.api);
-              var curCmp = (rv.f.kind === 'date') ? String(cur).slice(0, 10) : cur;
-              if (String(curCmp) === String(rv.val)) return;  /* unchanged */
+      if (isActionRow(row, colOf, cfg)) {
+        (function (row, label, idVal, parentRef) {
+          var act = idVal ? actBySys[idVal] : null;
+          if (idVal && !act) { warnings.push(label + ': action ID "' + idVal + '" not found — skipped.'); return; }
+          if (!act && !parentRef) { warnings.push(label + ': new action has no record row above it — skipped.'); return; }
+          pending.push(resolveRowFields(actFields, row, colOf,
+            act ? function (api) { return actCurrent(act, api); } : null, label, warnings)
+          .then(function (fields) {
+            if (act) {
+              if (Object.keys(fields).length) ops.push({ kind: 'actionUpdate', rawId: act.rawId, fields: fields });
+            } else if (fields.Name) {
+              ops.push({ kind: 'actionCreate', parent: parentRef, fields: fields, label: label });
+            } else {
+              warnings.push(label + ': new action has no name — skipped.');
             }
-            fields[rv.f.api] = rv.val;
-          });
+          }));
+        })(row, label, idVal, parentRef);
+        continue;
+      }
+
+      /* Record row */
+      var rec = idVal ? bySys[idVal] : null;
+      parentRef = { rawId: rec ? rec.rawId : '', createOp: null };
+      (function (row, label, idVal, rec, ref) {
+        pending.push(resolveRowFields(cfg.fields, row, colOf,
+          rec ? function (api) { return recCurrent(cfg.entityType, rec, api); } : null, label, warnings)
+        .then(function (fields) {
           if (rec) {
             if (Object.keys(fields).length) ops.push({ kind: 'update', rawId: rec.rawId, fields: fields });
           } else if (idVal) {
-            warnings.push(sheetName + ' row ' + rowNum + ': ID "' + idVal + '" not found — skipped.');
+            warnings.push(label + ': ID "' + idVal + '" not found — skipped.');
           } else if (fields.Title) {
             if (cfg.createExtra) cfg.createExtra(fields);
-            ops.push({ kind: 'create', entityType: cfg.entityType, fields: fields });
+            var op = { kind: 'create', entityType: cfg.entityType, fields: fields, createdId: '' };
+            ref.createOp = op;
+            ops.push(op);
           }
         }));
-      })(row, r + 1);
+      })(row, label, idVal, rec, parentRef);
     }
   });
 
   Promise.all(pending).then(function () {
-    var upd = ops.filter(function (o) { return o.kind === 'update'; }).length;
-    var cre = ops.filter(function (o) { return o.kind === 'create'; }).length;
-    if (!upd && !cre) {
+    /* Drop new actions whose parent row turned out not to be a usable record
+       (e.g. an unknown ID or a nameless new row) — nothing to attach them to. */
+    ops = ops.filter(function (o) {
+      if (o.kind !== 'actionCreate') return true;
+      if (o.parent.rawId || o.parent.createOp) return true;
+      warnings.push(o.label + ': parent record row was skipped, so this new action was too.');
+      return false;
+    });
+    var n = function (k) { return ops.filter(function (o) { return o.kind === k; }).length; };
+    var upd = n('update'), cre = n('create'), aUpd = n('actionUpdate'), aCre = n('actionCreate');
+    if (!upd && !cre && !aUpd && !aCre) {
       showToast('No changes to import.' + (warnings.length ? '\n' + warnings.slice(0, 6).join('\n') : ''));
       return;
     }
     /* Confirm via the panel's own anchored popover (NOT window.confirm) — no
        browser chrome, no dimming. Skipped-row details are surfaced in the
        result toast after the run rather than crammed into the confirm. */
-    var summary = 'Update ' + upd + ' and create ' + cre + ' record(s)' +
+    var parts = [];
+    if (upd || cre)   parts.push('update ' + upd + ' and create ' + cre + ' record(s)');
+    if (aUpd || aCre) parts.push('update ' + aUpd + ' and create ' + aCre + ' action(s)');
+    var summary = parts.join('; ');
+    summary = summary.charAt(0).toUpperCase() + summary.slice(1) +
       (warnings.length ? ' — ' + warnings.length + ' row(s) will be skipped' : '') + '.';
     showConfirm({
       anchor: document.getElementById('btn-import'),
@@ -2550,31 +2702,50 @@ function processImport(book) {
   });
 }
 
+/* Apply the import in two phases: records first (updates + creates, so new
+   records get their ids), then actions (updates, and creates whose Container
+   is either an existing record or one just created). */
 function executeImport(ops, warnings) {
   var c;
   try { c = getContext(); } catch (e) { showToast('Import failed: ' + e.message, { error: true }); return; }
-  var jobs = ops.map(function (op) {
-    var p;
-    if (op.kind === 'update') {
-      p = updateObject(c.base, c.sid, op.rawId, op.fields);
-    } else {
-      op.fields.PlannedFor = c.projId;
-      p = createObject(c.base, c.sid, op.entityType, op.fields).then(function (res) {
-        var caseId = res && res.id;
-        return caseId ? linkToProject(c.base, c.sid, caseId, c.projId) : null;
-      });
-    }
-    return p.then(function () { return true; }, function () { return false; });
+  warnings = (warnings || []).slice();
+  function okFail(p) { return p.then(function () { return true; }, function () { return false; }); }
+
+  var recordJobs = ops.filter(function (o) { return o.kind === 'update' || o.kind === 'create'; }).map(function (op) {
+    if (op.kind === 'update') return okFail(updateObject(c.base, c.sid, op.rawId, op.fields));
+    op.fields.PlannedFor = c.projId;
+    return okFail(createObject(c.base, c.sid, op.entityType, op.fields).then(function (res) {
+      var caseId = res && res.id;
+      op.createdId = caseId || '';
+      return caseId ? linkToProject(c.base, c.sid, caseId, c.projId) : null;
+    }));
   });
-  Promise.all(jobs).then(function (results) {
-    var failed = results.filter(function (ok) { return !ok; }).length;
-    var applied = results.length - failed;
-    var msg = 'Import complete: ' + applied + ' record(s) applied' + (failed ? ', ' + failed + ' failed' : '') + '.';
-    if (warnings && warnings.length) {
-      msg += '\n' + warnings.length + ' row(s) skipped:\n' + warnings.slice(0, 6).join('\n') + (warnings.length > 6 ? '\n…' : '');
-    }
-    showToast(msg, { error: failed > 0, duration: (failed || (warnings && warnings.length)) ? 9000 : 4500 });
-    loadAndRender();
+
+  Promise.all(recordJobs).then(function (recResults) {
+    var actionJobs = ops.filter(function (o) { return o.kind === 'actionUpdate' || o.kind === 'actionCreate'; }).map(function (op) {
+      if (op.kind === 'actionUpdate') return okFail(updateObject(c.base, c.sid, op.rawId, op.fields));
+      var container = op.parent.rawId || (op.parent.createOp && op.parent.createOp.createdId) || '';
+      if (!container) {
+        warnings.push(op.label + ': parent record was not created, so this new action was skipped.');
+        return Promise.resolve(false);
+      }
+      op.fields.Container = container;
+      if (!op.fields.ActionItemState) { var openRaw = actionStateRaw('Open'); if (openRaw) op.fields.ActionItemState = openRaw; }
+      return okFail(createObject(c.base, c.sid, 'ActionItem', op.fields));
+    });
+    return Promise.all(actionJobs).then(function (actResults) {
+      var recFailed = recResults.filter(function (ok) { return !ok; }).length;
+      var actFailed = actResults.filter(function (ok) { return !ok; }).length;
+      var msg = 'Import complete: ' + (recResults.length - recFailed) + ' record(s)' +
+        (actResults.length ? ' and ' + (actResults.length - actFailed) + ' action(s)' : '') + ' applied' +
+        ((recFailed + actFailed) ? ', ' + (recFailed + actFailed) + ' failed' : '') + '.';
+      if (warnings.length) {
+        msg += '\n' + warnings.length + ' row(s) skipped:\n' + warnings.slice(0, 6).join('\n') + (warnings.length > 6 ? '\n…' : '');
+      }
+      var failed = recFailed + actFailed;
+      showToast(msg, { error: failed > 0, duration: (failed || warnings.length) ? 9000 : 4500 });
+      loadAndRender();
+    });
   });
 }
 
@@ -2635,7 +2806,7 @@ function loadAndRender() {
 
     var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
     var qActions =
-      "SELECT Name, EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
+      "SELECT SYSID, Name, Description, EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
       "FROM ActionItem WHERE Container IN (" + inList + ")";
 
     return czql(c.base, c.sid, qActions).then(function (actionEntities) {
