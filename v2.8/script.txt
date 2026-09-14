@@ -30,6 +30,12 @@ var RISK_STATE_OPTIONS = ['Draft', 'Open', 'Closed'];
    state is Closed. */
 var ACTION_STATE_OPTIONS = ['Open', 'Closed', 'Stuck'];
 
+/* Description field API name on the ACTIONITEM entity — a custom field on this
+   tenant (C_DescriptionA), NOT the standard Description used by Risk / Issue /
+   Request. Read in the actions query, exported in the Description column of
+   action rows, and written back on import. */
+var ACTION_DESC_FIELD = 'C_DescriptionA';
+
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
    this one string. */
@@ -577,7 +583,7 @@ function toAction(e) {
     rawId:    e.id || '',
     sysId:    e.SYSID || '',
     name:     e.Name || '(unnamed)',
-    description: e.Description || '',
+    description: e[ACTION_DESC_FIELD] || '',
     ownerRaw: (e.EntityOwner && e.EntityOwner.id) || '',
     assignee: (e.EntityOwner && e.EntityOwner.Name) || '—',
     dueDate:  e.DueDate || null,
@@ -2297,7 +2303,7 @@ var IMPORT_CFG = {
 function actionImportFields(cfg) {
   return [
     { hdr: cfg.nameHdr,  api: 'Name',            kind: 'text' },
-    { hdr: 'Description', api: 'Description',     kind: 'text' },
+    { hdr: 'Description', api: ACTION_DESC_FIELD, kind: 'text' },
     { hdr: cfg.ownerHdr, api: 'EntityOwner',     kind: 'user' },
     { hdr: cfg.dueHdr,   api: 'DueDate',         kind: 'date' },
     { hdr: 'Status',     api: 'ActionItemState', kind: 'pick' }
@@ -2306,7 +2312,7 @@ function actionImportFields(cfg) {
 /* Current raw value of a field on a loaded action (for change detection). */
 function actCurrent(a, api) {
   if (api === 'Name')            return a.name === '(unnamed)' ? '' : a.name;
-  if (api === 'Description')     return a.description || '';
+  if (api === ACTION_DESC_FIELD) return a.description || '';
   if (api === 'EntityOwner')     return a.ownerRaw || '';
   if (api === 'DueDate')         return a.dueDate || '';
   if (api === 'ActionItemState') return a.stateRaw || '';
@@ -2785,7 +2791,7 @@ function loadAndRender() {
 
     var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
     var qActions =
-      "SELECT SYSID, Name, Description, EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
+      "SELECT SYSID, Name, " + ACTION_DESC_FIELD + ", EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
       "FROM ActionItem WHERE Container IN (" + inList + ")";
 
     return czql(c.base, c.sid, qActions).then(function (actionEntities) {
