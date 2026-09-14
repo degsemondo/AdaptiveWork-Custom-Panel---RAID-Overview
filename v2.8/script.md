@@ -86,6 +86,10 @@ var RISK_NEXTREVIEW_FIELD = 'C_NextReviewDateR';
 
 /* Latest loaded data, retained so "Export to Excel" can use it. */
 var DATA = { risks: [], issues: [], requests: [], actionMap: {} };
+/* True once a load has completed successfully. Import refuses to run before
+   then — otherwise every ID in the sheet is "not found" and ID-less rows would
+   be created as duplicates. */
+var DATA_LOADED = false;
 
 /* Picklist option lists, collected from the loaded data (field -> [rawPath]). */
 var PICK = {};
@@ -1039,6 +1043,7 @@ function renderAll(risks, issues, requests, actionMap) {
   document.querySelectorAll('.actions-row.show').forEach(function (row) { if (row.id) openRows[row.id] = true; });
 
   DATA = { risks: risks, issues: issues, requests: requests, actionMap: actionMap };
+  DATA_LOADED = true;
   PICK = {};
   risks.forEach(function (r) {
     addPick(RISK_IMPACT_FIELD, r.impactRaw);
@@ -2347,6 +2352,15 @@ function isActionRow(row, colOf, cfg) {
   var nc = colOf[cfg.nameHdr];
   return nc != null && String(row[nc] || '').trim().indexOf(ACTION_NAME_PREFIX.trim()) === 0;
 }
+/* Action row from a PRE-Type-column export: blank ID and the literal word
+   "Action" in the name column, with the action's values shifted into the
+   following columns. Those can't be mapped safely, so they're skipped. */
+function isLegacyActionRow(row, colOf, cfg) {
+  if (colOf.Type != null) return false;
+  var idc = colOf.ID, nc = colOf[cfg.nameHdr];
+  var idBlank = idc == null || String(row[idc] || '').trim() === '';
+  return idBlank && nc != null && String(row[nc] || '').trim().toLowerCase() === 'action';
+}
 function stripActionPrefix(s) {
   s = String(s == null ? '' : s).trim();
   var p = ACTION_NAME_PREFIX.trim();
@@ -2598,7 +2612,12 @@ function resolveRowFields(fieldDefs, row, colOf, current, label, warnings) {
 }
 
 function processImport(book) {
-  var ops = [], warnings = [], pending = [];
+  if (!DATA_LOADED) {
+    showToast('The panel\'s data has not loaded, so the sheet cannot be matched to existing records. ' +
+      'Fix the load error shown in the tables (or refresh) and try the import again.', { error: true, duration: 9000 });
+    return;
+  }
+  var ops = [], warnings = [], pending = [], legacyActionRows = 0;
 
   /* Every loaded action, by SYSID (actions can sit under any tab's records). */
   var actBySys = {};
@@ -2631,6 +2650,7 @@ function processImport(book) {
       var idVal = (idCol != null) ? String(row[idCol] || '').trim() : '';
       var blank = row.every(function (v) { return String(v == null ? '' : v).trim() === ''; });
       if (blank) continue;
+      if (isLegacyActionRow(row, colOf, cfg)) { legacyActionRows++; continue; }
 
       if (isActionRow(row, colOf, cfg)) {
         (function (row, label, idVal, parentRef) {
@@ -2675,6 +2695,10 @@ function processImport(book) {
   });
 
   Promise.all(pending).then(function () {
+    if (legacyActionRows) {
+      warnings.unshift(legacyActionRows + ' action row(s) from an older export layout were skipped — ' +
+        'export again from this panel to update actions.');
+    }
     /* Drop new actions whose parent row turned out not to be a usable record
        (e.g. an unknown ID or a nameless new row) — nothing to attach them to. */
     ops = ops.filter(function (o) {
