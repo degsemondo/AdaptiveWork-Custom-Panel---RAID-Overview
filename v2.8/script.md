@@ -51,11 +51,11 @@ var RISK_STATE_OPTIONS = ['Draft', 'Open', 'Closed'];
    state is Closed. */
 var ACTION_STATE_OPTIONS = ['Open', 'Closed', 'Stuck'];
 
-/* Description field API name on the ACTIONITEM entity — a custom field on this
-   tenant (C_DescriptionA), NOT the standard Description used by Risk / Issue /
-   Request. Read in the actions query, exported in the Description column of
-   action rows, and written back on import. */
-var ACTION_DESC_FIELD = 'C_DescriptionA';
+/* Free-text "status update" field on the ACTIONITEM entity (a Text Area custom
+   field on this tenant). Edited via the notes pop-out on each action row, and it
+   is ALSO the value carried in the Description column of action rows in the
+   Excel export / import (aligned with the parent record's Description). */
+var ACTION_STATUS_FIELD = 'C_SummaryUpdateAction';
 
 /* Name of the Risk custom action that flips the Risk to Realised and spawns a
    linked Issue. If the action's API name differs from its display name, change
@@ -608,13 +608,12 @@ function toAction(e) {
     rawId:    e.id || '',
     sysId:    e.SYSID || '',
     name:     e.Name || '(unnamed)',
-    description: e[ACTION_DESC_FIELD] || '',
     ownerRaw: (e.EntityOwner && e.EntityOwner.id) || '',
     assignee: (e.EntityOwner && e.EntityOwner.Name) || '—',
     dueDate:  e.DueDate || null,
     stateRaw: pickRaw(e.ActionItemState),
     status:   statusLabel,
-    statusAction: e.C_SummaryUpdateAction || '',
+    statusAction: e[ACTION_STATUS_FIELD] || '',
     parentId: (e.Container && e.Container.id) || ''
   };
 }
@@ -703,9 +702,9 @@ function actionStatusInfo(stateRaw, dueIso) {
   return { label: label, done: isDone, late: isLate };
 }
 /* Inner HTML of an action row in display mode (icon, name, owner, status, tools).
-   statusAction = free-text C_SummaryUpdateAction value (drives the status pop-out icon's tint).
-   description  = C_DescriptionA; shown as a hover tooltip on the action name. */
-function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction, description) {
+   statusAction = free-text C_SummaryUpdateAction value — drives the status pop-out
+   icon's tint and is shown as a hover tooltip on the action name. */
+function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction) {
   var s = actionStatusInfo(stateRaw, dueIso);
   var iconCol = s.done ? '#3B6D11' : '#185FA5';
   var dCls = s.late ? 'overdue' : 'ok';
@@ -716,7 +715,7 @@ function actionInnerHtml(name, ownerName, stateRaw, dueIso, statusAction, descri
     '" aria-label="Action status"' + ' style="color:' + (hasStatus ? '#8B3A62' : '#c9ccd1') + '">' +
     '<i class="ti ti-notes" aria-hidden="true"></i></button>';
   return '<i class="ti ti-circle-check" style="font-size:14px;color:' + iconCol + '" aria-hidden="true"></i>' +
-    '<span class="action-name"' + (description && String(description).trim() ? ' title="' + esc(description) + '"' : '') + '>' + esc(name) + '</span>' +
+    '<span class="action-name"' + (hasStatus ? ' title="' + esc(statusAction) + '"' : '') + '>' + esc(name) + '</span>' +
     '<span class="action-meta">' + esc(ownerName && ownerName !== '—' ? ownerName : '—') + '</span>' +
     statePill +
     (s.label ? '<span class="action-due ' + dCls + '">· ' + esc(s.label) + '</span>' : '') +
@@ -735,9 +734,8 @@ function actionItemHtml(a) {
     ' data-owner-name="' + esc(a.assignee) + '"' +
     ' data-due="' + esc(a.dueDate || '') + '"' +
     ' data-state="' + esc(a.stateRaw) + '"' +
-    ' data-status-action="' + esc(a.statusAction || '') + '"' +
-    ' data-description="' + esc(a.description || '') + '">' +
-    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction, a.description) +
+    ' data-status-action="' + esc(a.statusAction || '') + '">' +
+    actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction) +
     '</div>';
 }
 /* Edit form for an action (used for both edit and add). */
@@ -775,8 +773,7 @@ function actionDataFromEl(el) {
     assignee: el.getAttribute('data-owner-name') || '',
     dueDate:  el.getAttribute('data-due') || '',
     stateRaw: el.getAttribute('data-state') || '',
-    statusAction: el.getAttribute('data-status-action') || '',
-    description:  el.getAttribute('data-description') || ''
+    statusAction: el.getAttribute('data-status-action') || ''
   };
 }
 function startActionEdit(el) {
@@ -790,7 +787,7 @@ function cancelActionEdit(el) {
   if (!el) return;
   if (!el.getAttribute('data-action-id')) { el.remove(); return; }   /* discard new draft */
   var a = actionDataFromEl(el);
-  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction, a.description);
+  el.innerHTML = actionInnerHtml(a.name, a.assignee, a.stateRaw, a.dueDate, a.statusAction);
 }
 function addActionRow(addBtn) {
   var block = addBtn.closest('.actions-block');
@@ -885,7 +882,8 @@ function openActionStatus(el) {
       if (String(text) === String(current)) return;   /* unchanged */
       var c;
       try { c = getContext(); } catch (e) { showToast('Cannot save status: ' + e.message, { error: true }); return; }
-      updateObject(c.base, c.sid, actionId, { C_SummaryUpdateAction: text })
+      var upd = {}; upd[ACTION_STATUS_FIELD] = text;
+      updateObject(c.base, c.sid, actionId, upd)
         .then(function () { el.setAttribute('data-status-action', text); return loadAndRender(); })
         .catch(function (err) { showToast('Failed to save status: ' + err.message, { error: true }); });
     }
@@ -2019,7 +2017,7 @@ function exportRowFor(header, vals) {
    sheet's own name + due-date header labels (e.g. "Risk name" / "Due Date",
    or "Request name" / "Decision by"); ownerHdr is the sheet's person column. */
 function exportActionRow(header, a, nameHdr, dueHdr, ownerHdr) {
-  var vals = { 'ID': a.sysId || '', 'Type': 'Action', 'Description': a.description || '',
+  var vals = { 'ID': a.sysId || '', 'Type': 'Action', 'Description': a.statusAction || '',
     'Status': cleanLabel(a.stateRaw) || '' };
   vals[nameHdr]  = ACTION_NAME_PREFIX + (a.name || '');
   vals[dueHdr]   = exportDateCell(a.dueDate);
@@ -2332,7 +2330,7 @@ var IMPORT_CFG = {
 function actionImportFields(cfg) {
   return [
     { hdr: cfg.nameHdr,  api: 'Name',            kind: 'text' },
-    { hdr: 'Description', api: ACTION_DESC_FIELD, kind: 'text' },
+    { hdr: 'Description', api: ACTION_STATUS_FIELD, kind: 'text' },
     { hdr: cfg.ownerHdr, api: 'EntityOwner',     kind: 'user' },
     { hdr: cfg.dueHdr,   api: 'DueDate',         kind: 'date' },
     { hdr: 'Status',     api: 'ActionItemState', kind: 'pick' }
@@ -2341,7 +2339,7 @@ function actionImportFields(cfg) {
 /* Current raw value of a field on a loaded action (for change detection). */
 function actCurrent(a, api) {
   if (api === 'Name')            return a.name === '(unnamed)' ? '' : a.name;
-  if (api === ACTION_DESC_FIELD) return a.description || '';
+  if (api === ACTION_STATUS_FIELD) return a.statusAction || '';
   if (api === 'EntityOwner')     return a.ownerRaw || '';
   if (api === 'DueDate')         return a.dueDate || '';
   if (api === 'ActionItemState') return a.stateRaw || '';
@@ -2764,15 +2762,15 @@ function executeImport(ops, warnings) {
       }
       op.fields.Container = container;
       if (!op.fields.ActionItemState) { var openRaw = actionStateRaw('Open'); if (openRaw) op.fields.ActionItemState = openRaw; }
-      /* The description is sent with the create AND re-applied as an update
-         afterwards: the tenant has been seen to accept the create yet leave
-         C_DescriptionA blank. Any failure of that second step is reported by
-         name in the result toast rather than swallowed. */
-      var desc = op.fields[ACTION_DESC_FIELD];
+      /* The status-update text is sent with the create AND re-applied as an
+         update afterwards: the tenant has been seen to accept a create yet leave
+         the custom text field blank. Any failure of that second step is reported
+         by name in the result toast rather than swallowed. */
+      var desc = op.fields[ACTION_STATUS_FIELD];
       return okFail(createObject(c.base, c.sid, 'ActionItem', op.fields).then(function (res) {
         var newId = res && res.id;
         if (!newId || !desc) return;
-        var f = {}; f[ACTION_DESC_FIELD] = desc;
+        var f = {}; f[ACTION_STATUS_FIELD] = desc;
         return updateObject(c.base, c.sid, newId, f).catch(function (err) {
           warnings.push(op.label + ': action created but its description could not be saved — ' + err.message);
         });
@@ -2851,7 +2849,7 @@ function loadAndRender() {
 
     var inList = caseIds.map(function (id) { return "'" + id + "'"; }).join(',');
     var qActions =
-      "SELECT SYSID, Name, " + ACTION_DESC_FIELD + ", EntityOwner.Name, DueDate, ActionItemState, C_SummaryUpdateAction, Container.id " +
+      "SELECT SYSID, Name, EntityOwner.Name, DueDate, ActionItemState, " + ACTION_STATUS_FIELD + ", Container.id " +
       "FROM ActionItem WHERE Container IN (" + inList + ")";
 
     return czql(c.base, c.sid, qActions).then(function (actionEntities) {
