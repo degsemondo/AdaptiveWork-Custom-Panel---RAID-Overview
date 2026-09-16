@@ -2015,10 +2015,12 @@ var EXPORT_SHEETS = {
     header: ['ID', 'Type', 'Risk name', 'Description', 'Probability', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date', 'Status'],
     dropdowns: [
       { hdr: 'Type',            inline: ['Risk', 'Action'] },
-      { hdr: 'Probability',     list: 'riskProbability' },
-      { hdr: 'Impact',          list: 'riskImpact' },
-      { hdr: 'Reporting Level', list: 'riskReporting' },
-      { hdr: 'Status',          list: 'riskStatus', actionList: 'actionStatus' }
+      { hdr: 'Probability',     list: 'riskProbability', recordOnly: true },
+      { hdr: 'Impact',          list: 'riskImpact',      recordOnly: true },
+      { hdr: 'Reporting Level', list: 'riskReporting',   recordOnly: true },
+      { hdr: 'Status',          list: 'riskStatus', actionList: 'actionStatus' },
+      { hdr: 'Due Date',        date: true },
+      { hdr: 'Next Review Date', date: true, recordOnly: true }
     ],
     record: function (r) {
       return { 'ID': r.sysId, 'Type': 'Risk', 'Risk name': r.name, 'Description': r.description || '',
@@ -2032,9 +2034,10 @@ var EXPORT_SHEETS = {
     header: ['ID', 'Type', 'Issue name', 'Description', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Status'],
     dropdowns: [
       { hdr: 'Type',            inline: ['Issue', 'Action'] },
-      { hdr: 'Impact',          list: 'issueImpact' },
-      { hdr: 'Reporting Level', list: 'issueReporting' },
-      { hdr: 'Status',          list: 'caseStatus', actionList: 'actionStatus' }
+      { hdr: 'Impact',          list: 'issueImpact',    recordOnly: true },
+      { hdr: 'Reporting Level', list: 'issueReporting', recordOnly: true },
+      { hdr: 'Status',          list: 'caseStatus', actionList: 'actionStatus' },
+      { hdr: 'Due Date',        date: true }
     ],
     record: function (i) {
       return { 'ID': i.sysId, 'Type': 'Issue', 'Issue name': i.name, 'Description': i.description || '',
@@ -2047,7 +2050,8 @@ var EXPORT_SHEETS = {
     header: ['ID', 'Type', 'Request name', 'Description', 'Requestor', 'Submitted', 'Decision by', 'Status'],
     dropdowns: [
       { hdr: 'Type',   inline: ['Change Request', 'Action'] },
-      { hdr: 'Status', list: 'caseStatus', actionList: 'actionStatus' }
+      { hdr: 'Status', list: 'caseStatus', actionList: 'actionStatus' },
+      { hdr: 'Decision by', date: true }
     ],
     record: function (q) {
       return { 'ID': q.sysId, 'Type': 'Change Request', 'Request name': q.name, 'Description': q.description || '',
@@ -2119,28 +2123,63 @@ function xlsxListsSheet(lists) {
   return { xml: xml, refs: refs };
 }
 
-/* <dataValidations> for one sheet: a list dropdown per configured column,
-   covering the data rows plus a generous run of blank rows beneath (so rows the
-   user adds still get the dropdown). The Status rule switches list by the row's
-   Type via IF(), so record rows offer case states and action rows offer
-   Open / Closed / Stuck. */
+/* <dataValidations> for one sheet — one rule per configured column:
+   - list dropdowns (`list` / `inline`), covering the data rows plus a generous
+     run of blank rows beneath so rows the user adds still get them;
+   - `recordOnly` rules skip the exported ACTION rows entirely (no arrow there)
+     and, on the blank tail rows, blank the list if Type is set to "Action";
+   - Status switches list by the row's Type via IF() — record rows offer case
+     states, action rows offer Open / Closed / Stuck;
+   - `date: true` columns get Excel date validation (any real date), so typed
+     non-dates are rejected in the sheet before they reach the import. */
 var DROPDOWN_EXTRA_ROWS = 500;
-function xlsxValidations(header, dropdowns, refs, lastRow) {
+/* Compress a sorted list of 1-based row numbers into "L2:L4 L7 L9:L12" refs. */
+function rowRanges(L, rows) {
+  var out = [], i = 0;
+  while (i < rows.length) {
+    var start = rows[i], end = start;
+    while (i + 1 < rows.length && rows[i + 1] === end + 1) { i++; end = rows[i]; }
+    out.push(start === end ? L + start : L + start + ':' + L + end);
+    i++;
+  }
+  return out;
+}
+function xlsxValidations(header, dropdowns, refs, kinds) {
   if (!dropdowns || !dropdowns.length) return '';
   var typeCol = header.indexOf('Type'), out = [];
+  var lastRow = kinds.length + 1;
+  var recordRows = [];
+  kinds.forEach(function (k, i) { if (k !== 'action') recordRows.push(i + 2); });
+  var tailFrom = lastRow + 1, tailTo = lastRow + DROPDOWN_EXTRA_ROWS;
+  var typeRef = typeCol > -1 ? '$' + colLetter(typeCol) + '2' : '';
+
   dropdowns.forEach(function (d) {
     var ci = header.indexOf(d.hdr);
     if (ci < 0) return;
+    var L = colLetter(ci);
+    /* Cells the rule covers: every data row, or record rows only, plus the
+       blank tail beneath the data. */
+    var sqref = d.recordOnly
+      ? rowRanges(L, recordRows).concat([L + tailFrom + ':' + L + tailTo]).join(' ')
+      : L + '2:' + L + tailTo;
+
+    if (d.date) {
+      out.push('<dataValidation type="date" operator="greaterThan" allowBlank="1" showInputMessage="1" showErrorMessage="1" ' +
+        'errorStyle="stop" errorTitle="Not a date" error="Please enter a valid date." sqref="' + sqref + '">' +
+        '<formula1>1</formula1></dataValidation>');
+      return;
+    }
+
     var formula = '';
     if (d.inline && d.inline.length) {
       formula = '"' + d.inline.join(',') + '"';
     } else {
       var main = refs[d.list], alt = d.actionList ? refs[d.actionList] : '';
-      if (main && alt && typeCol > -1) formula = 'IF($' + colLetter(typeCol) + '2="Action",' + alt + ',' + main + ')';
+      if (main && alt && typeRef) formula = 'IF(' + typeRef + '="Action",' + alt + ',' + main + ')';
+      else if (main && d.recordOnly && typeRef) formula = 'IF(' + typeRef + '="Action","",' + main + ')';
       else formula = main || alt || '';
     }
     if (!formula) return;
-    var L = colLetter(ci), sqref = L + '2:' + L + (lastRow + DROPDOWN_EXTRA_ROWS);
     out.push('<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" ' +
       'errorStyle="stop" errorTitle="Not in list" error="Please pick a value from the drop-down list." sqref="' + sqref + '">' +
       '<formula1>' + xmlEsc(formula) + '</formula1></dataValidation>');
@@ -2260,7 +2299,7 @@ function xlsxSheet(header, built, heatCol, dropdowns, listRefs) {
     '<sheetFormatPr defaultRowHeight="15"' + (hasActions ? ' outlineLevelRow="1"' : '') + '/>' +
     '<cols>' + cols + '</cols>' +
     '<sheetData>' + rows.join('') + '</sheetData>' +
-    xlsxValidations(header, dropdowns, listRefs || {}, built.rows.length + 1) +
+    xlsxValidations(header, dropdowns, listRefs || {}, built.kinds) +
     '</worksheet>';
 }
 
