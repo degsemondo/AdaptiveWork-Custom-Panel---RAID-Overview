@@ -2025,10 +2025,22 @@ function exportActionRow(header, a, nameHdr, dueHdr, ownerHdr) {
   return exportRowFor(header, vals);
 }
 /* Sheet definitions — header order IS the column order. */
+/* Sheet definitions — header order IS the column order. `dropdowns` lists the
+   in-cell data-validation lists for that sheet: `list` names a column on the
+   hidden Lists sheet (see exportLists); `actionList` is the alternative list
+   used when the row's Type is "Action" (Status column); `inline` is a short
+   literal list written straight into the rule (Type column). */
 var EXPORT_SHEETS = {
   risks: {
     name: 'Risks', list: 'risks', type: 'Risk', nameHdr: 'Risk name', dueHdr: 'Due Date', ownerHdr: 'Owner', heatHdr: 'Score',
     header: ['ID', 'Type', 'Risk name', 'Description', 'Probability', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Next Review Date', 'Status'],
+    dropdowns: [
+      { hdr: 'Type',            inline: ['Risk', 'Action'] },
+      { hdr: 'Probability',     list: 'riskProbability' },
+      { hdr: 'Impact',          list: 'riskImpact' },
+      { hdr: 'Reporting Level', list: 'riskReporting' },
+      { hdr: 'Status',          list: 'riskStatus', actionList: 'actionStatus' }
+    ],
     record: function (r) {
       return { 'ID': r.sysId, 'Type': 'Risk', 'Risk name': r.name, 'Description': r.description || '',
         'Probability': r.probability, 'Impact': r.impact, 'Score': r.riskRating, 'Owner': r.owner,
@@ -2039,6 +2051,12 @@ var EXPORT_SHEETS = {
   issues: {
     name: 'Issues', list: 'issues', type: 'Issue', nameHdr: 'Issue name', dueHdr: 'Due Date', ownerHdr: 'Owner', heatHdr: 'Score',
     header: ['ID', 'Type', 'Issue name', 'Description', 'Impact', 'Score', 'Owner', 'Reporting Level', 'Due Date', 'Status'],
+    dropdowns: [
+      { hdr: 'Type',            inline: ['Issue', 'Action'] },
+      { hdr: 'Impact',          list: 'issueImpact' },
+      { hdr: 'Reporting Level', list: 'issueReporting' },
+      { hdr: 'Status',          list: 'caseStatus', actionList: 'actionStatus' }
+    ],
     record: function (i) {
       return { 'ID': i.sysId, 'Type': 'Issue', 'Issue name': i.name, 'Description': i.description || '',
         'Impact': i.impact, 'Score': i.score, 'Owner': i.owner, 'Reporting Level': i.reportingLevel,
@@ -2048,6 +2066,10 @@ var EXPORT_SHEETS = {
   requests: {
     name: 'Change Requests', list: 'requests', type: 'Change Request', nameHdr: 'Request name', dueHdr: 'Decision by', ownerHdr: 'Requestor', heatHdr: null,
     header: ['ID', 'Type', 'Request name', 'Description', 'Requestor', 'Submitted', 'Decision by', 'Status'],
+    dropdowns: [
+      { hdr: 'Type',   inline: ['Change Request', 'Action'] },
+      { hdr: 'Status', list: 'caseStatus', actionList: 'actionStatus' }
+    ],
     record: function (q) {
       return { 'ID': q.sysId, 'Type': 'Change Request', 'Request name': q.name, 'Description': q.description || '',
         'Requestor': q.requestor, 'Submitted': exportDateCell(q.submitted),
@@ -2068,6 +2090,83 @@ function exportRowsFor(def) {
     });
   });
   return { rows: rows, kinds: kinds };
+}
+
+/* Picklist LABELS for the in-cell dropdowns, keyed by the names used in
+   EXPORT_SHEETS[*].dropdowns. Sourced from what the panel has loaded for this
+   tenant (picklist entities / metadata / data) — the same options the on-screen
+   editors offer and the import will accept. Empty lists produce no dropdown. */
+function exportLists() {
+  function labels(field) { return pickOptionList(field, '').map(function (o) { return o.label; }); }
+  function uniq(arr) { var seen = {}, out = []; arr.forEach(function (v) { v = String(v || '').trim(); if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); } }); return out; }
+  /* Action states: the standard three where the tenant really has them, else
+     whatever the enum returned. */
+  var actionStatus = ACTION_STATE_OPTIONS.filter(function (l) { return !!pickRawByLabel('ActionItemState', [l]); });
+  if (!actionStatus.length) actionStatus = labels('ActionItemState');
+  return {
+    riskProbability: uniq(labels('C_Probability')),
+    riskImpact:      uniq(labels(RISK_IMPACT_FIELD)),
+    riskReporting:   uniq(RISK_REPORTING_FIELD ? labels(RISK_REPORTING_FIELD) : []),
+    issueImpact:     uniq(labels('C_IssueImpact')),
+    issueReporting:  uniq(labels('C_ReportingLevel')),
+    riskStatus:      uniq(RISK_STATE_OPTIONS),
+    caseStatus:      uniq(labels('State')),
+    actionStatus:    uniq(actionStatus)
+  };
+}
+
+/* The hidden "Lists" sheet: one column per list (header row 1, values from
+   row 2). Returns its XML plus an absolute range reference per list, e.g.
+   { riskProbability: 'Lists!$A$2:$A$7' }, for the validation formulas. */
+var LISTS_SHEET_NAME = 'Lists';
+function xlsxListsSheet(lists) {
+  var names = Object.keys(lists), refs = {}, cols = [], rowsMax = 1, rowsXml = [];
+  names.forEach(function (n, i) {
+    var L = colLetter(i), vals = lists[n] || [];
+    cols.push({ name: n, letter: L, vals: vals });
+    if (vals.length) { refs[n] = LISTS_SHEET_NAME + '!$' + L + '$2:$' + L + '$' + (vals.length + 1); rowsMax = Math.max(rowsMax, vals.length + 1); }
+  });
+  for (var r = 1; r <= rowsMax; r++) {
+    var cells = cols.map(function (c) {
+      var v = (r === 1) ? c.name : (c.vals[r - 2] === undefined ? '' : c.vals[r - 2]);
+      return xlsxCell(c.letter + r, v, r === 1 ? 1 : 0);
+    }).join('');
+    rowsXml.push('<row r="' + r + '">' + cells + '</row>');
+  }
+  var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheetData>' + rowsXml.join('') + '</sheetData></worksheet>';
+  return { xml: xml, refs: refs };
+}
+
+/* <dataValidations> for one sheet: a list dropdown per configured column,
+   covering the data rows plus a generous run of blank rows beneath (so rows the
+   user adds still get the dropdown). The Status rule switches list by the row's
+   Type via IF(), so record rows offer case states and action rows offer
+   Open / Closed / Stuck. */
+var DROPDOWN_EXTRA_ROWS = 500;
+function xlsxValidations(header, dropdowns, refs, lastRow) {
+  if (!dropdowns || !dropdowns.length) return '';
+  var typeCol = header.indexOf('Type'), out = [];
+  dropdowns.forEach(function (d) {
+    var ci = header.indexOf(d.hdr);
+    if (ci < 0) return;
+    var formula = '';
+    if (d.inline && d.inline.length) {
+      formula = '"' + d.inline.join(',') + '"';
+    } else {
+      var main = refs[d.list], alt = d.actionList ? refs[d.actionList] : '';
+      if (main && alt && typeCol > -1) formula = 'IF($' + colLetter(typeCol) + '2="Action",' + alt + ',' + main + ')';
+      else formula = main || alt || '';
+    }
+    if (!formula) return;
+    var L = colLetter(ci), sqref = L + '2:' + L + (lastRow + DROPDOWN_EXTRA_ROWS);
+    out.push('<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" ' +
+      'errorStyle="stop" errorTitle="Not in list" error="Please pick a value from the drop-down list." sqref="' + sqref + '">' +
+      '<formula1>' + xmlEsc(formula) + '</formula1></dataValidation>');
+  });
+  return out.length ? '<dataValidations count="' + out.length + '">' + out.join('') + '</dataValidations>' : '';
 }
 
 /* OOXML helpers --------------------------------------------------------- */
@@ -2142,17 +2241,20 @@ function exportColWidth(h) {
   if (/ name$/.test(h)) return 44;
   return 18;
 }
+/* One cell: a Date -> numeric date cell, '' -> empty styled cell, else inline string. */
+function xlsxCell(ref, v, xf) {
+  if (v instanceof Date) return '<c r="' + ref + '" s="' + xf + '"><v>' + excelSerial(v) + '</v></c>';
+  var s = String(v == null ? '' : v);
+  if (s === '') return '<c r="' + ref + '" s="' + xf + '"/>';
+  return '<c r="' + ref + '" s="' + xf + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(s) + '</t></is></c>';
+}
 /* One worksheet's XML. Strings are written inline (no sharedStrings part),
    Dates as real date cells, header row frozen. heatCol = 0-based column to
    colour by Score, or null. Action rows get outlineLevel 1 so Excel shows them
-   as a collapsible group beneath their parent record (summary row above). */
-function xlsxSheet(header, built, heatCol) {
-  function cell(ref, v, xf) {
-    if (v instanceof Date) return '<c r="' + ref + '" s="' + xf + '"><v>' + excelSerial(v) + '</v></c>';
-    var s = String(v == null ? '' : v);
-    if (s === '') return '<c r="' + ref + '" s="' + xf + '"/>';
-    return '<c r="' + ref + '" s="' + xf + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(s) + '</t></is></c>';
-  }
+   as a collapsible group beneath their parent record (summary row above).
+   dropdowns + listRefs (optional) add in-cell data-validation lists. */
+function xlsxSheet(header, built, heatCol, dropdowns, listRefs) {
+  var cell = xlsxCell;
   var cols = header.map(function (h, i) {
     return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + exportColWidth(h) + '" customWidth="1"/>';
   }).join('');
@@ -2179,6 +2281,7 @@ function xlsxSheet(header, built, heatCol) {
     '<sheetFormatPr defaultRowHeight="15"' + (hasActions ? ' outlineLevelRow="1"' : '') + '/>' +
     '<cols>' + cols + '</cols>' +
     '<sheetData>' + rows.join('') + '</sheetData>' +
+    xlsxValidations(header, dropdowns, listRefs || {}, built.rows.length + 1) +
     '</worksheet>';
 }
 
@@ -2214,17 +2317,24 @@ function zipStore(files) {   /* files = [{ name, text }] -> Blob */
   return new Blob(parts, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
-/* Assemble the .xlsx package from [{ name, header, built, heatCol }]. */
-function buildXlsx(sheets) {
+/* Assemble the .xlsx package from [{ name, header, built, heatCol, dropdowns }]
+   plus the hidden Lists sheet ({ xml, refs }) that the dropdowns point at. */
+function buildXlsx(sheets, listsSheet) {
   var wbRels = '', wbSheets = '', ctOverrides = '', files = [];
-  sheets.forEach(function (s, i) {
-    var n = i + 1, safe = String(s.name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
-    wbSheets += '<sheet name="' + xmlEsc(safe) + '" sheetId="' + n + '" r:id="rId' + n + '"/>';
+  var refs = (listsSheet && listsSheet.refs) || {};
+  function addSheet(n, name, xml, hidden) {
+    var safe = String(name).replace(/[:\\\/?*\[\]]/g, ' ').slice(0, 31);
+    wbSheets += '<sheet name="' + xmlEsc(safe) + '" sheetId="' + n + '"' + (hidden ? ' state="hidden"' : '') + ' r:id="rId' + n + '"/>';
     wbRels += '<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + n + '.xml"/>';
     ctOverrides += '<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
-    files.push({ name: 'xl/worksheets/sheet' + n + '.xml', text: xlsxSheet(s.header, s.built, s.heatCol) });
+    files.push({ name: 'xl/worksheets/sheet' + n + '.xml', text: xml });
+  }
+  sheets.forEach(function (s, i) {
+    addSheet(i + 1, s.name, xlsxSheet(s.header, s.built, s.heatCol, s.dropdowns, refs), false);
   });
-  var stylesRid = 'rId' + (sheets.length + 1);
+  var count = sheets.length;
+  if (listsSheet && listsSheet.xml) { count++; addSheet(count, LISTS_SHEET_NAME, listsSheet.xml, true); }
+  var stylesRid = 'rId' + (count + 1);
   files.unshift(
     { name: '[Content_Types].xml', text:
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -2262,8 +2372,9 @@ function exportToExcel() {
   var blob = buildXlsx(['risks', 'issues', 'requests'].map(function (k) {
     var def = EXPORT_SHEETS[k];
     var heatCol = def.heatHdr ? def.header.indexOf(def.heatHdr) : null;
-    return { name: def.name, header: def.header, built: exportRowsFor(def), heatCol: (heatCol != null && heatCol > -1) ? heatCol : null };
-  }));
+    return { name: def.name, header: def.header, built: exportRowsFor(def), dropdowns: def.dropdowns,
+      heatCol: (heatCol != null && heatCol > -1) ? heatCol : null };
+  }), xlsxListsSheet(exportLists()));
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
@@ -2430,6 +2541,16 @@ function importConvert(field, kind, display) {
     var opts = pickOptionList(field, '');
     for (var i = 0; i < opts.length; i++) {
       if (String(opts[i].label).toLowerCase() === display.toLowerCase()) return Promise.resolve(opts[i].raw);
+    }
+    /* A Risk status offered in the sheet's dropdown (Draft / Open / Closed) may
+       not yet appear on any loaded record — derive its path from the tenant's
+       State prefix, exactly as the panel's own Status editor does. */
+    if (field === 'State') {
+      for (var k = 0; k < RISK_STATE_OPTIONS.length; k++) {
+        if (RISK_STATE_OPTIONS[k].toLowerCase() === display.toLowerCase()) {
+          return Promise.resolve(rawForLabel('State', RISK_STATE_OPTIONS[k], '/CaseState/'));
+        }
+      }
     }
     return Promise.resolve(null);
   }
