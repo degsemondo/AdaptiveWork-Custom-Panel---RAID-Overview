@@ -279,6 +279,18 @@ function pickOptionList(field, current) {
   real.forEach(function (o) { push(o.raw, o.label); });   /* everything real, in order */
 
   if (current) push(current, cleanLabel(current));        /* keep the row's own value */
+
+  /* Numbered scales ("1 - Minor" … "6 - Severe") always display in numeric
+     order, whatever order the tenant returned them in and even when a label
+     doesn't exactly match the canonical text above (e.g. "3 - Possible+" vs
+     "3 - Possible +"). Only applied when EVERY option starts with a number. */
+  var allNumbered = out.length > 0 && out.every(function (o) { return /^\s*\d+/.test(o.label); });
+  if (allNumbered) {
+    out.sort(function (a, b) {
+      var na = parseInt(a.label, 10), nb = parseInt(b.label, 10);
+      return na !== nb ? na - nb : String(a.label).localeCompare(String(b.label));
+    });
+  }
   return out;
 }
 
