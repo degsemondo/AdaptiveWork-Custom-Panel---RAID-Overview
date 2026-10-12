@@ -41,6 +41,15 @@ var ACTION_STATUS_FIELD = 'C_SummaryUpdateAction';
    this one string. */
 var CREATE_ISSUE_ACTION = 'Create Issue from Risk';
 
+/* ===== DEPENDENCIES TAB ON / OFF =====
+   true  = show the Dependencies tab (create / amend / delete dependencies,
+           within this project and to/from work items in other projects).
+   false = hide it completely (no tab, no queries).
+   It can ALSO be switched off per panel without touching this Script by adding
+       "showDependencies": false
+   to the panel's Data field. */
+var SHOW_DEPENDENCIES_TAB = true;
+
 /* Reporting Level field API name on the RISK entity — DIFFERS from Issue's.
    Confirmed on eu.clarizentb.com: Risk field = C_ReportingLevelR (picklist class
    C_RiskReportingLevelR); Issue field = C_ReportingLevel (class
@@ -1713,7 +1722,10 @@ function reapplyFilters(tab) {
   var st = filterEl ? filterEl.value : '';
   document.querySelectorAll('#' + cfg.tbody + ' .data-row').forEach(function (row) {
     var okText = !q || row.innerText.toLowerCase().indexOf(q) > -1;
-    var okStatus = !st || (row.getAttribute('data-status') || '') === st;
+    /* data-tags (pipe-separated) lets a row match several filter values —
+       used by the Dependencies tab (health + scope + direction). */
+    var tags = '|' + (row.getAttribute('data-tags') || '') + '|';
+    var okStatus = !st || (row.getAttribute('data-status') || '') === st || tags.indexOf('|' + st + '|') > -1;
     row.style.display = (okText && okStatus) ? '' : 'none';
   });
 }
@@ -1828,7 +1840,9 @@ function wireSort(tab) {
 var TAB_CFG = {
   risks:    { tbody: 'risks-body',    placeholder: 'Search risks…',    newLabel: 'New risk',    create: createNewRisk,    statuses: RISK_STATES },
   issues:   { tbody: 'issues-body',   placeholder: 'Search issues…',   newLabel: 'New issue',   create: createNewIssue,   statuses: ['Open', 'In progress', 'Resolved'] },
-  requests: { tbody: 'requests-body', placeholder: 'Search change requests…', newLabel: 'New change request', create: createNewRequest, statuses: ['New', 'Pending', 'Approved', 'Rejected'] }
+  requests: { tbody: 'requests-body', placeholder: 'Search change requests…', newLabel: 'New change request', create: createNewRequest, statuses: ['New', 'Pending', 'Approved', 'Rejected'] },
+  dependencies: { tbody: 'deps-body', placeholder: 'Search dependencies…', newLabel: 'New dependency', create: createNewDependency,
+                  statuses: ['Conflict', 'At risk', 'On track', 'Done', 'Internal', 'Inter-project', 'We depend on', 'Depends on us'] }
 };
 var ACTIVE_TAB = 'risks';
 
@@ -1869,6 +1883,7 @@ function updateExpandAllBtn() {
   var icon = btn.querySelector('i');
   if (icon) icon.className = on ? 'ti ti-chevrons-up' : 'ti ti-chevrons-down';
   btn.setAttribute('aria-label', on ? 'Collapse all action items' : 'Expand all action items');
+  btn.hidden = (ACTIVE_TAB === 'dependencies');   /* dependencies have no action panels */
 }
 
 /* Switch tabs and point the shared toolbar at the newly active tab. */
@@ -1965,6 +1980,17 @@ function initUI() {
 
   var eab = document.getElementById('btn-expand-all');
   if (eab) eab.addEventListener('click', toggleExpandAll);
+
+  /* Dependencies tab: reveal + wire only when switched on; otherwise drop it
+     from TAB_CFG so nothing (toolbar, loads) ever refers to it. */
+  if (depsEnabled()) {
+    var depTab = document.getElementById('tab-dependencies');
+    if (depTab) depTab.hidden = false;
+    var depsBody = document.getElementById('deps-body');
+    if (depsBody) depsBody.addEventListener('click', onDepsClick);
+  } else {
+    delete TAB_CFG.dependencies;
+  }
 
   var ex = document.getElementById('btn-export');
   if (ex) ex.addEventListener('click', exportToExcel);
@@ -2948,6 +2974,517 @@ function executeImport(ops, warnings) {
   });
 }
 
+/* ---------- 17d. Dependencies tab ----------
+   Lists every dependency that touches THIS project (either end), with full
+   create / amend / delete. Either end may be any work item — task, milestone
+   or project — in this project or in ANY other project (inter-project).
+   Entity + fields (confirmed on FCA eu1; standard AdaptiveWork):
+     DependencyLink.DependsOn      = predecessor (the item depended on)
+     DependencyLink.WorkItem       = successor   (the dependent item)
+     DependencyLink.DependencyType = picklist (FS/SS/FF/SF); the tenant's real
+                                     values are read at load — never fabricated
+     DependencyLink.Lag            = duration; written in days (negative = lead)
+   Presentation: one row per link, read left to right as
+     Predecessor  —TYPE / lag→  Successor
+   with a health pill (date slack vs the link), a Link pill saying whether it
+   is internal or inter-project (and which way), and the other project's name
+   shown on any end that lives outside this project. */
+var DEP_CFG = { ent: 'DependencyLink', pred: 'DependsOn', succ: 'WorkItem', type: 'DependencyType', lag: 'Lag', typeEntity: 'DependencyType' };
+var DEP_TYPES = [
+  { code: 'FTS', label: 'Finish to Start',  keys: ['fs', 'fts', 'finishtostart', 'finishstart'] },
+  { code: 'STS', label: 'Start to Start',   keys: ['ss', 'sts', 'starttostart', 'startstart'] },
+  { code: 'FTF', label: 'Finish to Finish', keys: ['ff', 'ftf', 'finishtofinish', 'finishfinish'] },
+  { code: 'STF', label: 'Start to Finish',  keys: ['sf', 'stf', 'starttofinish', 'startfinish'] }
+];
+var DEP_RISK_DAYS = 10;   /* slack at or below this many days = At risk */
+var DEPS = { list: [], loaded: false, pid: '', typeRaw: {}, typesLoaded: false, lagShape: 'object', attempt: 0, projItems: null };
+
+function depsEnabled() {
+  if (!SHOW_DEPENDENCIES_TAB) return false;
+  try {
+    var ctx = API.Context.getData();
+    if (ctx && (ctx.showDependencies === false || ctx.showDependencies === 'false')) return false;
+  } catch (e) {}
+  return true;
+}
+
+/* ----- value helpers ----- */
+function depNorm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z]/g, ''); }
+/* Tenant DependencyType label/path -> FTS / STS / FTF / STF ('' if unknown). */
+function depTypeCode(v) {
+  var n = depNorm(cleanLabel(v));
+  if (!n) return '';
+  for (var i = 0; i < DEP_TYPES.length; i++) {
+    var keys = DEP_TYPES[i].keys;
+    for (var k = 0; k < keys.length; k++) {
+      if (n === keys[k] || (keys[k].length > 4 && n.indexOf(keys[k]) > -1)) return DEP_TYPES[i].code;
+    }
+  }
+  return '';
+}
+function depTypeInfo(code) {
+  for (var i = 0; i < DEP_TYPES.length; i++) { if (DEP_TYPES[i].code === code) return DEP_TYPES[i]; }
+  return null;
+}
+/* Lag arrives either as a number or as a duration object { value, unit }.
+   Remember which, so writes use the same shape. Weeks / months are counted as
+   working days (5 / 20), matching how AdaptiveWork schedules lag. */
+function lagToDays(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') { DEPS.lagShape = 'number'; return v; }
+  if (typeof v === 'object') {
+    DEPS.lagShape = 'object';
+    var val = parseFloat(v.value);
+    if (isNaN(val)) return 0;
+    var u = String(v.unit || '').toLowerCase();
+    if (u.indexOf('min') === 0)   return Math.round(val / 480 * 10) / 10;
+    if (u.indexOf('hour') === 0)  return Math.round(val / 8 * 10) / 10;
+    if (u.indexOf('week') === 0)  return val * 5;
+    if (u.indexOf('month') === 0) return val * 20;
+    return val;
+  }
+  var n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+function lagValue(days) {
+  return DEPS.lagShape === 'number' ? days : { value: days, unit: 'Days', durationType: 'Default' };
+}
+/* One end of a link (or a work-item search row) -> plain object. */
+function depSide(o) {
+  o = o || {};
+  var id = (typeof o === 'string') ? o : (o.id || '');
+  var proj = (typeof o === 'object' && o.Project) || {};
+  var s = {
+    id: id,
+    kind: String(id).split('/')[1] || '',
+    name: (typeof o === 'object' && o.Name) || cleanLabel(id),
+    sysId: (typeof o === 'object' && o.SYSID) || '',
+    projectId: (typeof proj === 'string' ? proj : proj.id) || '',
+    projectName: (typeof proj === 'object' && proj.Name) || '',
+    start: (typeof o === 'object' && o.StartDate) || null,
+    due: (typeof o === 'object' && o.DueDate) || null,
+    pct: (typeof o === 'object' && o.PercentCompleted != null) ? Number(o.PercentCompleted) : null
+  };
+  if (s.kind === 'Project' && !s.projectId) { s.projectId = s.id; s.projectName = s.name; }
+  return s;
+}
+function isOurs(side) { return !!side && !!DEPS.pid && (side.projectId === DEPS.pid || side.id === DEPS.pid); }
+function depDays(a, b) { return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000); }
+function depKindIcon(kind) {
+  if (kind === 'Milestone') return 'ti-flag';
+  if (kind === 'Project') return 'ti-briefcase';
+  if (kind === 'Task') return 'ti-subtask';
+  return 'ti-point';
+}
+/* Health of a link: compare the two anchor dates the link type ties together. */
+function depHealth(d) {
+  var p = d.pred, s = d.succ, a, b, adj = 0;
+  if (d.code === 'STS')      { a = p.start; b = s.start; }
+  else if (d.code === 'FTF') { a = p.due;   b = s.due; }
+  else if (d.code === 'STF') { a = p.start; b = s.due; }
+  else                       { a = p.due;   b = s.start; adj = 1; }   /* FTS: successor starts the day after */
+  d.slack = (a && b) ? depDays(a, b) - adj - (d.lag || 0) : null;
+  var done = p.pct != null && p.pct >= 100;
+  var predLate = !done && p.due && new Date(p.due) < new Date();
+  if (done) d.health = 'Done';
+  else if (d.slack == null) d.health = 'No dates';
+  else if (d.slack < 0) d.health = 'Conflict';
+  else if (d.slack <= DEP_RISK_DAYS || predLate) d.health = 'At risk';
+  else d.health = 'On track';
+}
+function toDep(r) {
+  var tObj = r[DEP_CFG.type];
+  var tId = (typeof tObj === 'string') ? tObj : ((tObj && tObj.id) || '');
+  var tName = (tObj && typeof tObj === 'object' && tObj.Name) || cleanLabel(tId);
+  var code = depTypeCode(tName) || depTypeCode(tId);
+  if (code && tId && !DEPS.typeRaw[code]) DEPS.typeRaw[code] = tId;   /* learn real paths from data */
+  var d = {
+    id: r.id || '',
+    pred: depSide(r[DEP_CFG.pred]),
+    succ: depSide(r[DEP_CFG.succ]),
+    code: code, typeLabel: tName, typeRaw: tId,
+    lag: lagToDays(r[DEP_CFG.lag])
+  };
+  if (!d.id || !d.pred.id || !d.succ.id) return null;
+  d.predOurs = isOurs(d.pred);
+  d.succOurs = isOurs(d.succ);
+  d.scope = (d.predOurs && d.succOurs) ? 'Internal' : 'Inter-project';
+  d.dir = (d.predOurs && d.succOurs) ? 'Internal' : (d.succOurs ? 'We depend on' : 'Depends on us');
+  depHealth(d);
+  return d;
+}
+function findDep(id) {
+  for (var i = 0; i < DEPS.list.length; i++) { if (DEPS.list[i].id === id) return DEPS.list[i]; }
+  return null;
+}
+
+/* ----- loading ----- */
+/* Filters: dotted paths are not allowed in CZQL WHERE, so scope by subquery.
+   Tried in order; the first that the tenant accepts is remembered. */
+function depQueryAttempts(pid) {
+  var q = "'" + pid + "'", P = DEP_CFG.pred, S = DEP_CFG.succ;
+  function sub(ent) { return '(SELECT id FROM ' + ent + ' WHERE Project = ' + q + ')'; }
+  var wheres = [
+    P + ' IN ' + sub('WorkItem') + ' OR ' + S + ' IN ' + sub('WorkItem') + ' OR ' + P + ' = ' + q + ' OR ' + S + ' = ' + q,
+    P + ' IN ' + sub('WorkItem') + ' OR ' + S + ' IN ' + sub('WorkItem'),
+    P + ' IN ' + sub('Task') + ' OR ' + S + ' IN ' + sub('Task')
+  ];
+  var sideF = ['Name', 'SYSID', 'Project.Name', 'StartDate', 'DueDate', 'PercentCompleted'];
+  var full = [DEP_CFG.type + '.Name', DEP_CFG.lag];
+  [P, S].forEach(function (k) { sideF.forEach(function (f) { full.push(k + '.' + f); }); });
+  var basic = [DEP_CFG.type, DEP_CFG.lag, P + '.Name', P + '.Project.Name', S + '.Name', S + '.Project.Name'];
+  var out = [];
+  wheres.forEach(function (w) { [full, basic].forEach(function (sel) { out.push({ w: w, sel: sel.join(', ') }); }); });
+  return out;
+}
+function queryDeps(c) {
+  var attempts = depQueryAttempts(c.projId);
+  function run(i, lastErr) {
+    if (i >= attempts.length) return Promise.reject(lastErr || new Error('no query form was accepted'));
+    var a = attempts[i];
+    return czql(c.base, c.sid, 'SELECT ' + a.sel + ' FROM ' + DEP_CFG.ent + ' WHERE ' + a.w)
+      .then(function (rows) { DEPS.attempt = i; return rows; }, function (e) { return run(i + 1, e); });
+  }
+  return run(DEPS.attempt || 0);
+}
+function loadDepTypes(c) {
+  if (DEPS.typesLoaded) return Promise.resolve();
+  return czql(c.base, c.sid, 'SELECT Name FROM ' + DEP_CFG.typeEntity).then(function (rows) {
+    rows.forEach(function (r) {
+      var code = depTypeCode(r.Name) || depTypeCode(r.id);
+      if (code && r.id) DEPS.typeRaw[code] = r.id;
+    });
+    DEPS.typesLoaded = true;
+  }, function () { DEPS.typesLoaded = true; });   /* fall back to values learned from the data */
+}
+var DEP_ORDER = { 'Conflict': 0, 'At risk': 1, 'No dates': 2, 'On track': 3, 'Done': 4 };
+function loadDeps() {
+  if (!TAB_CFG.dependencies) return Promise.resolve();
+  var c;
+  try { c = getContext(); } catch (e) { return Promise.resolve(); }
+  DEPS.pid = c.projId;
+  if (!DEPS.loaded) showLoading('deps-body', 8);
+  return loadDepTypes(c)
+    .then(function () { return queryDeps(c); })
+    .then(function (rows) {
+      var seen = {};
+      DEPS.list = rows.map(toDep).filter(function (d) { if (!d || seen[d.id]) return false; seen[d.id] = 1; return true; });
+      DEPS.list.sort(function (a, b) {
+        var o = (DEP_ORDER[a.health] || 0) - (DEP_ORDER[b.health] || 0);
+        return o || String(a.pred.name).localeCompare(String(b.pred.name));
+      });
+      DEPS.loaded = true;
+      renderDeps();
+    })
+    .catch(function (err) {
+      console.error('Dependencies load failed:', err);
+      showError('deps-body', 8, 'Failed to load dependencies: ' + err.message);
+    });
+}
+
+/* ----- rendering ----- */
+function depEndHtml(s, ours) {
+  var url = detailUrl(s.id);
+  var name = url
+    ? '<a class="id-link dep-name" href="' + esc(url) + '" target="_blank" rel="noopener" title="Open in AdaptiveWork">' + esc(s.name) + '</a>'
+    : '<span class="dep-name">' + esc(s.name) + '</span>';
+  var where = ours ? 'This project'
+    : '<span class="dep-ext" title="Another project"><i class="ti ti-external-link" aria-hidden="true"></i>' + esc(s.projectName || 'Other project') + '</span>';
+  return '<div class="dep-end"><i class="ti ' + depKindIcon(s.kind) + ' dep-kind" title="' + esc(s.kind) + '" aria-hidden="true"></i>' +
+    '<div><div>' + name + '</div>' +
+    '<div class="dep-sub">' + (s.sysId ? esc(s.sysId) + ' · ' : '') + where + '</div>' +
+    '<div class="dep-sub">' + fmtDate(s.start) + ' → ' + fmtDate(s.due) + '</div></div></div>';
+}
+var DEP_HEALTH_CLS = { 'Conflict': 'hl-conflict', 'At risk': 'hl-risk', 'On track': 'hl-ok', 'Done': 'hl-done', 'No dates': 'hl-unknown' };
+var DEP_HEALTH_TIP = {
+  'Conflict': 'The successor is scheduled before the link allows',
+  'At risk': 'Little slack, or the predecessor is overdue',
+  'On track': 'Dates satisfy the link with room to spare',
+  'Done': 'Predecessor is complete',
+  'No dates': 'One of the anchor dates is missing'
+};
+var DEP_DIR_CLS = { 'Internal': 'dir-int', 'We depend on': 'dir-in', 'Depends on us': 'dir-out' };
+function depRowHtml(d) {
+  var info = depTypeInfo(d.code);
+  var lagTxt = d.lag === 0 ? '0d' : (d.lag > 0 ? '+' + d.lag + 'd' : '−' + Math.abs(d.lag) + 'd');
+  var slack = d.slack == null ? '—'
+    : '<span class="dep-slack ' + (d.slack < 0 ? 'neg' : 'pos') + '">' + (d.slack > 0 ? '+' : (d.slack < 0 ? '−' : '')) + Math.abs(d.slack) + 'd</span>';
+  return '<tr class="data-row dep-row" data-dep-id="' + esc(d.id) + '" data-status="' + esc(d.health) + '"' +
+      ' data-tags="' + esc([d.health, d.scope, d.dir].join('|')) + '">' +
+    '<td><span class="hl ' + (DEP_HEALTH_CLS[d.health] || 'hl-unknown') + '" title="' + esc(DEP_HEALTH_TIP[d.health] || '') + '">' + esc(d.health) + '</span></td>' +
+    '<td>' + depEndHtml(d.pred, d.predOurs) + '</td>' +
+    '<td><span class="dep-type" title="' + esc(info ? info.label : d.typeLabel) + '">' + esc(d.code || d.typeLabel || '—') + '</span></td>' +
+    '<td><span class="dep-lag' + (d.lag < 0 ? ' dep-lead' : '') + '" title="' + (d.lag < 0 ? 'Lead' : 'Lag') + ' in days">' + lagTxt + '</span></td>' +
+    '<td>' + depEndHtml(d.succ, d.succOurs) + '</td>' +
+    '<td><span class="dir ' + (DEP_DIR_CLS[d.dir] || 'dir-int') + '">' + esc(d.dir) + '</span></td>' +
+    '<td>' + slack + '</td>' +
+    '<td class="row-action-cell">' +
+      '<button class="act-edit dep-edit" title="Edit dependency" aria-label="Edit dependency"><i class="ti ti-pencil" aria-hidden="true"></i></button> ' +
+      '<button class="act-del dep-del" title="Delete dependency" aria-label="Delete dependency"><i class="ti ti-trash" aria-hidden="true"></i></button>' +
+    '</td></tr>';
+}
+function renderDeps() {
+  var tbody = document.getElementById('deps-body');
+  if (!tbody) return;
+  var badge = document.getElementById('badge-dependencies');
+  if (badge) badge.textContent = DEPS.list.length;
+  if (!DEPS.list.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data">No dependencies touch this project yet. ' +
+      'Use <b>New dependency</b> to link work items in this project or in other projects.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = DEPS.list.map(depRowHtml).join('');
+  if (ACTIVE_TAB === 'dependencies') reapplyFilters('dependencies');
+}
+
+/* ----- create / amend form ----- */
+function depProjectLabel(s) { return s && s.id ? (isOurs(s) ? 'This project' : (s.projectName || 'Other project')) : ''; }
+function depPickerHtml(role, s) {
+  s = s || {};
+  return '<td class="ta-cell"><input type="text" class="edit-input ta-input wi-input" data-role="' + role + '" autocomplete="off"' +
+      ' placeholder="Search work items…" value="' + esc(s.name || '') + '"' +
+      ' data-item-id="' + esc(s.id || '') + '" data-pid="' + esc(s.projectId || '') + '" data-pname="' + esc(s.projectName || '') + '" />' +
+    '<div class="ta-menu wi-menu" style="display:none"></div>' +
+    '<div class="wi-chosen">' + esc(depProjectLabel(s)) + '</div></td>';
+}
+function depFormRowHtml(d) {
+  var code = d && d.code ? d.code : 'FTS', lag = d ? d.lag : 0;
+  var opts = DEP_TYPES.map(function (t) {
+    return '<option value="' + t.code + '"' + (t.code === code ? ' selected' : '') + '>' + t.code + ' – ' + t.label + '</option>';
+  }).join('');
+  return '<td><span class="hl hl-unknown">' + (d ? 'Editing' : 'New') + '</span></td>' +
+    depPickerHtml('pred', d && d.pred) +
+    '<td><select class="edit-input dep-type-input">' + opts + '</select></td>' +
+    '<td><input type="number" step="1" class="edit-input dep-lag-input" value="' + esc(lag) + '" title="Days. Negative = lead." /></td>' +
+    depPickerHtml('succ', d && d.succ) +
+    '<td colspan="2" class="dep-form-hint">Lag in days · negative = lead</td>' +
+    '<td class="row-action-cell">' +
+      '<button class="act-save dep-save">Save</button> <button class="act-cancel dep-cancel">Cancel</button>' +
+    '</td>';
+}
+function wireDepForm(tr) {
+  tr.querySelectorAll('.wi-input').forEach(function (inp) { attachWorkItemPicker(inp, inp.parentNode.querySelector('.ta-menu')); });
+  tr.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); renderDeps(); }
+    else if (e.key === 'Enter' && !e.target.classList.contains('wi-input')) { e.preventDefault(); saveDepForm(tr); }
+  });
+  var first = tr.querySelector('.wi-input');
+  if (first) first.focus();
+}
+/* tr = an existing dependency row to amend, or null for a new one. */
+function openDepForm(tr) {
+  var tbody = document.getElementById('deps-body');
+  if (!tbody) return;
+  var open = tbody.querySelector('.dep-form-row');
+  if (open) { var f = open.querySelector('.wi-input'); if (f) f.focus(); return; }
+  if (tr) {
+    var d = findDep(tr.getAttribute('data-dep-id'));
+    if (!d) return;
+    tr.className = 'dep-form-row';
+    tr.innerHTML = depFormRowHtml(d);
+    wireDepForm(tr);
+    return;
+  }
+  var noData = tbody.querySelector('.no-data');
+  if (noData) { var nd = noData.closest('tr'); if (nd) nd.remove(); }
+  var row = document.createElement('tr');
+  row.className = 'dep-form-row';
+  row.innerHTML = depFormRowHtml(null);
+  tbody.insertBefore(row, tbody.firstChild);
+  wireDepForm(row);
+}
+function createNewDependency() { openDepForm(null); }
+
+/* Create (id '') or update (id) a DependencyLink. If the tenant rejects the lag
+   format, retry once with the other shape (number <-> duration object). */
+function writeDep(c, id, fields) {
+  function go(f) { return id ? updateObject(c.base, c.sid, id, f) : createObject(c.base, c.sid, DEP_CFG.ent, f); }
+  return go(fields).catch(function (err) {
+    if (!(DEP_CFG.lag in fields) || !/lag|duration|value|format|parse|convert|type/i.test(err.message)) throw err;
+    var alt = {}, k;
+    for (k in fields) alt[k] = fields[k];
+    var v = fields[DEP_CFG.lag];
+    alt[DEP_CFG.lag] = (v && typeof v === 'object') ? v.value : { value: v, unit: 'Days', durationType: 'Default' };
+    return go(alt).then(function (r) { DEPS.lagShape = (typeof alt[DEP_CFG.lag] === 'object') ? 'object' : 'number'; return r; });
+  });
+}
+function saveDepForm(tr) {
+  if (!tr) return;
+  var c;
+  try { c = getContext(); } catch (e) { showToast('Cannot save dependency: ' + e.message, { error: true }); return; }
+  function side(role) {
+    var i = tr.querySelector('.wi-input[data-role="' + role + '"]');
+    return i ? { id: i.getAttribute('data-item-id') || '', name: i.value, projectId: i.getAttribute('data-pid') || '' } : { id: '' };
+  }
+  var p = side('pred'), s = side('succ');
+  var code = tr.querySelector('.dep-type-input').value;
+  var lagStr = String(tr.querySelector('.dep-lag-input').value).trim();
+  var lag = lagStr === '' ? 0 : Number(lagStr);
+
+  if (!p.id || !s.id) { showToast('Pick both a predecessor and a successor from the search list.', { error: true }); return; }
+  if (p.id === s.id) { showToast('A work item cannot depend on itself.', { error: true }); return; }
+  if (isNaN(lag) || Math.round(lag) !== lag) { showToast('Lag must be a whole number of days (negative for a lead).', { error: true }); return; }
+  if (!isOurs(p) && !isOurs(s)) { showToast('At least one end of the dependency must be in this project.', { error: true }); return; }
+  var typeRaw = DEPS.typeRaw[code];
+  if (!typeRaw) { showToast('The ' + code + ' dependency type was not found on this tenant.', { error: true }); return; }
+
+  var editId = (tr.getAttribute('data-dep-id') || '');
+  var orig = editId ? findDep(editId) : null;
+  var dup = DEPS.list.some(function (d) { return d.id !== editId && d.pred.id === p.id && d.succ.id === s.id; });
+  if (dup) { showToast('That dependency already exists.', { error: true }); return; }
+
+  var btn = tr.querySelector('.dep-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  var job;
+  if (orig && orig.pred.id === p.id && orig.succ.id === s.id) {
+    /* Same two ends: update type / lag in place. */
+    var f = {};
+    if (code !== orig.code) f[DEP_CFG.type] = typeRaw;
+    if (lag !== orig.lag) f[DEP_CFG.lag] = lagValue(lag);
+    if (!Object.keys(f).length) { renderDeps(); return; }
+    job = writeDep(c, editId, f);
+  } else {
+    /* New link, or the ends changed: create the new link FIRST, then remove
+       the old one — so a failed create never loses the original. */
+    var nf = {};
+    nf[DEP_CFG.pred] = p.id;
+    nf[DEP_CFG.succ] = s.id;
+    nf[DEP_CFG.type] = typeRaw;
+    nf[DEP_CFG.lag] = lagValue(lag);
+    job = writeDep(c, '', nf).then(function () { if (orig) return deleteObject(c.base, c.sid, orig.id); });
+  }
+  job.then(function () {
+    showToast(orig ? 'Dependency updated.' : 'Dependency created.');
+    return loadDeps();
+  }).catch(function (err) {
+    showToast('Failed to save dependency: ' + err.message, { error: true });
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  });
+}
+function deleteDep(btn) {
+  var tr = btn.closest('tr');
+  var d = tr ? findDep(tr.getAttribute('data-dep-id')) : null;
+  if (!d) return;
+  showConfirm({
+    anchor: btn,
+    title: 'Delete dependency',
+    message: 'Delete "' + d.pred.name + '" → "' + d.succ.name + '" (' + (d.code || d.typeLabel) + ')? This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger: true,
+    onConfirm: function () {
+      var c;
+      try { c = getContext(); } catch (e) { showToast('Cannot delete dependency: ' + e.message, { error: true }); return; }
+      deleteObject(c.base, c.sid, d.id)
+        .then(function () { showToast('Dependency deleted.'); return loadDeps(); })
+        .catch(function (err) { showToast('Failed to delete dependency: ' + err.message, { error: true }); });
+    }
+  });
+}
+function onDepsClick(e) {
+  var b;
+  if ((b = e.target.closest('.dep-edit')))   { openDepForm(b.closest('tr')); return; }
+  if ((b = e.target.closest('.dep-del')))    { deleteDep(b); return; }
+  if ((b = e.target.closest('.dep-save')))   { saveDepForm(b.closest('tr')); return; }
+  if ((b = e.target.closest('.dep-cancel'))) { renderDeps(); return; }
+}
+
+/* ----- work-item picker (any project) ----- */
+function mapWorkItems(rows) {
+  return rows.map(depSide).filter(function (s) { return !!s.id; }).sort(function (a, b) {
+    var o = (isOurs(a) ? 0 : 1) - (isOurs(b) ? 0 : 1);
+    return o || String(a.name).localeCompare(String(b.name));
+  });
+}
+/* Free-text search across ALL work items (tasks, milestones, projects). */
+function searchWorkItems(term) {
+  var c = getContext();
+  var safe = String(term).trim().replace(/'/g, "''");
+  var head = 'SELECT Name, SYSID, Project.Name FROM WorkItem WHERE ';
+  var byName = "Name LIKE '%" + safe + "%'";
+  return czql(c.base, c.sid, head + byName + " OR SYSID LIKE '%" + safe + "%'")
+    .catch(function () { return czql(c.base, c.sid, head + byName); })
+    .then(function (rows) { return mapWorkItems(rows).slice(0, 40); });
+}
+/* This project's items, shown on focus before anything is typed. */
+function projectWorkItems() {
+  if (DEPS.projItems) return Promise.resolve(DEPS.projItems);
+  var c = getContext();
+  return czql(c.base, c.sid, "SELECT Name, SYSID, Project.Name FROM WorkItem WHERE Project = '" + c.projId + "'")
+    .then(function (rows) { DEPS.projItems = mapWorkItems(rows); return DEPS.projItems; });
+}
+function attachWorkItemPicker(input, menu) {
+  var timer = null;
+  function close() { menu.style.display = 'none'; menu.innerHTML = ''; }
+  function place() {
+    var r = input.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 2) + 'px';
+    menu.style.minWidth = Math.max(r.width, 280) + 'px';
+    menu.style.zIndex = '1000';
+  }
+  function itemHtml(x) {
+    var meta = [x.sysId, isOurs(x) ? '' : (x.projectName || 'Other project')].filter(Boolean).join(' · ');
+    return '<div class="ta-item wi-item" data-id="' + esc(x.id) + '" data-name="' + esc(x.name) + '"' +
+      ' data-pid="' + esc(x.projectId) + '" data-pname="' + esc(x.projectName) + '">' +
+      '<i class="ti ' + depKindIcon(x.kind) + '" aria-hidden="true"></i> ' + esc(x.name) +
+      (meta ? '<span class="wi-meta">' + esc(meta) + '</span>' : '') + '</div>';
+  }
+  function render(list, note) {
+    var ours = list.filter(isOurs), other = list.filter(function (x) { return !isOurs(x); });
+    var html = '';
+    if (ours.length) html += '<div class="ta-group">This project</div>' + ours.map(itemHtml).join('');
+    if (other.length) html += '<div class="ta-group">Other projects</div>' + other.map(itemHtml).join('');
+    if (!html) html = '<div class="ta-empty">No matches</div>';
+    if (note) html += '<div class="ta-empty">' + esc(note) + '</div>';
+    menu.innerHTML = html;
+    menu.style.display = 'block';
+    place();
+  }
+  function showProject() {
+    projectWorkItems()
+      .then(function (list) { render(list.slice(0, 40), 'Type 2+ letters to search all projects'); })
+      .catch(close);
+  }
+  function pick(el) {
+    input.value = el.getAttribute('data-name');
+    input.setAttribute('data-item-id', el.getAttribute('data-id'));
+    input.setAttribute('data-pid', el.getAttribute('data-pid'));
+    input.setAttribute('data-pname', el.getAttribute('data-pname'));
+    var chosen = input.parentNode.querySelector('.wi-chosen');
+    if (chosen) chosen.textContent = depProjectLabel({ id: el.getAttribute('data-id'), projectId: el.getAttribute('data-pid'), projectName: el.getAttribute('data-pname') });
+    close();
+  }
+  /* On focus: select the current text (typing replaces it) and offer this
+     project's items straight away. */
+  input.addEventListener('focus', function () {
+    if (input.getAttribute('data-item-id')) { try { input.select(); } catch (e) {} }
+    showProject();
+  });
+  input.addEventListener('input', function () {
+    input.setAttribute('data-item-id', '');   /* typing invalidates a prior pick */
+    var chosen = input.parentNode.querySelector('.wi-chosen');
+    if (chosen) chosen.textContent = '';
+    var term = input.value.trim();
+    if (timer) clearTimeout(timer);
+    if (term.length < 2) { showProject(); return; }
+    timer = setTimeout(function () {
+      searchWorkItems(term).then(function (list) { render(list); }).catch(close);
+    }, 250);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && menu.style.display === 'block') {
+      var first = menu.querySelector('.wi-item');
+      if (first) { e.preventDefault(); e.stopPropagation(); pick(first); }
+    }
+  });
+  menu.addEventListener('mousedown', function (e) {
+    var it = e.target.closest('.wi-item');
+    if (it) { e.preventDefault(); pick(it); }
+  });
+  input.addEventListener('blur', function () { setTimeout(close, 150); });
+}
+
 /* ---------- 18. Load + render ----------
    Queries all three entities (+ their actions) and repaints the tables in place.
    Used for the initial load AND as a "soft refresh" after any change — replacing
@@ -3053,4 +3590,5 @@ setTimeout(function () {
   });
 
   loadAndRender();
+  loadDeps();   /* no-op when the Dependencies tab is switched off */
 }, 100);

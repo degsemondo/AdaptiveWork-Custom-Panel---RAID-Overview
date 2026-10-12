@@ -38,6 +38,14 @@
         Change Requests
         <span class="aw-badge badge-request" id="badge-requests">0</span>
       </button>
+
+      <!-- Hidden until the Script switches it on (SHOW_DEPENDENCIES_TAB) -->
+      <button class="aw-tab" role="tab" aria-selected="false" id="tab-dependencies"
+              aria-controls="pane-dependencies" data-tab="dependencies" hidden>
+        <i class="ti ti-git-merge" style="font-size:14px" aria-hidden="true"></i>
+        Dependencies
+        <span class="aw-badge badge-dep" id="badge-dependencies">0</span>
+      </button>
     </div>
 
     <!-- Shared toolbar — acts on the active tab -->
@@ -154,6 +162,40 @@
             </tr>
           </thead>
           <tbody id="requests-body">
+            <!-- Populated dynamically by panel.js -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════
+         TAB 4 — DEPENDENCIES (optional)
+    ══════════════════════════════════════ -->
+    <div class="aw-tab-pane" id="pane-dependencies" role="tabpanel">
+
+      <div class="dep-legend">
+        <span><b>FTS</b> Finish → Start</span>
+        <span><b>STS</b> Start → Start</span>
+        <span><b>FTF</b> Finish → Finish</span>
+        <span><b>STF</b> Start → Finish</span>
+        <span class="dep-legend-note">Lag in days · negative = lead</span>
+      </div>
+
+      <div class="aw-table-wrap">
+        <table class="aw-table dep-table" role="grid" aria-label="Dependencies">
+          <thead>
+            <tr>
+              <th style="width:80px">Health</th>
+              <th>Predecessor</th>
+              <th>Type</th>
+              <th>Lag</th>
+              <th>Successor</th>
+              <th>Link</th>
+              <th>Slack</th>
+              <th style="width:58px"></th>
+            </tr>
+          </thead>
+          <tbody id="deps-body">
             <!-- Populated dynamically by panel.js -->
           </tbody>
         </table>
